@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# omamac-menu-data — one JSON blob describing everything the menu renders.
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+# jq -R -s -c 'split("\n") | map(select(length > 0))' turns newline-separated
+# output into a JSON array with correct escaping, so a name containing a quote
+# cannot break the document.
+arr() { jq -R -s -c 'split("\n") | map(select(length > 0))'; }
+
+theme_cur=$("${OMAMAC_DIR}/bin/omamac-theme" --current)
+font_cur=$("${OMAMAC_DIR}/bin/omamac-font" --current)
+bg_cur=$("${OMAMAC_DIR}/bin/omamac-bg" --current)
+
+jq -n -c \
+  --arg tc "$theme_cur" --argjson to "$("${OMAMAC_DIR}/bin/omamac-theme" --list | arr)" \
+  --arg fc "$font_cur"  --argjson fo "$("${OMAMAC_DIR}/bin/omamac-font"  --list | arr)" \
+  --arg bc "$bg_cur"    --argjson bo "$("${OMAMAC_DIR}/bin/omamac-bg"    --list | arr)" \
+  '{theme:{current:$tc,options:$to},font:{current:$fc,options:$fo},bg:{current:$bc,options:$bo}}'

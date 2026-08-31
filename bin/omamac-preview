@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# omamac-preview <wallpaper-basename> — data URI for the menu's preview pane.
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/state.sh"
+SIPS="${OMAMAC_SIPS:-sips}"
+
+theme=$(omamac_state_get theme.name)
+src="${OMAMAC_CACHE}/backgrounds/${theme}/$1"
+[ -f "$src" ] || exit 0
+
+thumbs="${OMAMAC_CACHE}/thumbs/${theme}"
+mkdir -p "$thumbs"
+thumb="${thumbs}/$1.jpg"
+if [ ! -f "$thumb" ] || [ "$src" -nt "$thumb" ]; then
+  "$SIPS" -s format jpeg -Z 600 "$src" --out "$thumb" >/dev/null 2>&1 || exit 0
+fi
+printf 'data:image/jpeg;base64,%s\n' "$(base64 -i "$thumb" | tr -d '\n')"
