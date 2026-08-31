@@ -5,7 +5,11 @@ OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "${OMAMAC_DIR}/lib/state.sh"
 SIPS="${OMAMAC_SIPS:-sips}"
 
+# The menu calls this speculatively for every visible row, so every failure
+# here is a quiet no-output exit 0 — never an error.
+[ $# -ge 1 ] || exit 0
 theme=$(omamac_state_get theme.name)
+[ -n "$theme" ] || exit 0
 src="${OMAMAC_CACHE}/backgrounds/${theme}/$1"
 [ -f "$src" ] || exit 0
 
@@ -13,6 +17,12 @@ thumbs="${OMAMAC_CACHE}/thumbs/${theme}"
 mkdir -p "$thumbs"
 thumb="${thumbs}/$1.jpg"
 if [ ! -f "$thumb" ] || [ "$src" -nt "$thumb" ]; then
-  "$SIPS" -s format jpeg -Z 600 "$src" --out "$thumb" >/dev/null 2>&1 || exit 0
+  if ! "$SIPS" -s format jpeg -Z 600 "$src" --out "$thumb" >/dev/null 2>&1; then
+    # sips creates --out before it knows the conversion failed. Drop the stub, or
+    # the [ -f "$thumb" ] check above serves it forever as a malformed "success"
+    # — the same trap bin/omamac-bg already guards for curl.
+    rm -f "$thumb"
+    exit 0
+  fi
 fi
 printf 'data:image/jpeg;base64,%s\n' "$(base64 -i "$thumb" | tr -d '\n')"
