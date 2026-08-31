@@ -59,19 +59,25 @@ test_unknown_wallpaper_exits_1() {
 # --- Step 5: on-demand fetch, exercised with no network ---
 #
 # The brief's Step 5 sample lists a theme's upstream backgrounds via the GitHub
-# contents API (a hardcoded https://api.github.com URL), which cannot be pointed
-# at a file:// fixture tree. Per the task's own instructions, that path was made
-# testable instead: the listing step also goes through OMAMAC_OMARCHY_RAW (via an
-# "index" manifest file alongside the backgrounds) and through OMAMAC_FETCH, so
-# both the listing and the download legs are exercised end-to-end against a local
-# file:// fixture tree with the real (unstubbed) curl — no network, no stubbing.
+# contents API (a hardcoded https://api.github.com URL). That call cannot be
+# pointed at a fixture for tests and is rate-limited at runtime — and it turns
+# out upstream ships no such index of its own anyway. So the file list is
+# vendored instead: tools/sync-themes (Task 12) writes a plain-text
+# backgrounds.index into each theme's directory at vendor time, when it already
+# has GitHub API access. bg_fetch reads that local index — no network — and
+# only the per-file downloads go over OMAMAC_FETCH, against a pinned upstream
+# revision. In tests, OMAMAC_OMARCHY_RAW/OMAMAC_OMARCHY_REV point at a local
+# file:// fixture tree, so even the download leg never touches the network;
+# curl itself is never stubbed, it just never leaves the filesystem.
 setup_bg_fetch() {
   export OMAMAC_THEMES_DIR="$TMPDIR_TEST/themes"
   mkdir -p "$OMAMAC_THEMES_DIR/tokyo-night"
   cp "$OMAMAC_ROOT/tests/fixtures/dark/colors.toml" "$OMAMAC_THEMES_DIR/tokyo-night/"
+  printf '1-alpha.jpg\n2-beta.jpg\n' > "$OMAMAC_THEMES_DIR/tokyo-night/backgrounds.index"
   export OMAMAC_CONFIG_ROOT="$TMPDIR_TEST/config"
   export OMAMAC_KILL="true" OMAMAC_OSASCRIPT="true"
   export OMAMAC_OMARCHY_RAW="file://$OMAMAC_ROOT/tests/fixtures/omarchy"
+  export OMAMAC_OMARCHY_REV="rev"
   printf 'tokyo-night\n' > "$OMAMAC_STATE/theme.name"
 }
 
@@ -90,6 +96,16 @@ test_list_does_not_refetch_a_populated_cache() {
   printf 'already-here' > "$OMAMAC_CACHE/backgrounds/tokyo-night/only.jpg"
   assert_eq "only.jpg" "$("$OMAMAC_BIN" bg --list)"
   assert_eq "already-here" "$(cat "$OMAMAC_CACHE/backgrounds/tokyo-night/only.jpg")"
+}
+
+test_list_with_no_backgrounds_index_warns_and_succeeds() {
+  setup_bg_fetch
+  rm -f "$OMAMAC_THEMES_DIR/tokyo-night/backgrounds.index"
+  local out rc
+  out=$("$OMAMAC_BIN" bg --list 2>&1); rc=$?
+  assert_eq 0 "$rc" "a missing backgrounds.index must not fail the command"
+  assert_eq "" "$("$OMAMAC_BIN" bg --list 2>/dev/null)"
+  assert_contains "$out" "no backgrounds.index"
 }
 
 run_tests

@@ -7,30 +7,32 @@ source "${OMAMAC_DIR}/lib/state.sh"
 OSASCRIPT="${OMAMAC_OSASCRIPT:-osascript}"
 OMAMAC_FETCH="${OMAMAC_FETCH:-curl -fsSL}"
 OMARCHY_RAW="${OMAMAC_OMARCHY_RAW:-https://raw.githubusercontent.com/omacom/omarchy}"
+OMAMAC_OMARCHY_REV="${OMAMAC_OMARCHY_REV:-b686ed892d9c3020c3336203f6d34cc75b544e2b}"
+THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
 
 current_theme() { omamac_state_get theme.name; }
 bg_dir() { printf '%s/backgrounds/%s\n' "$OMAMAC_CACHE" "$(current_theme)"; }
 
-# Populate the cache for a theme from upstream on first use. Listing goes
-# through an "index" manifest fetched from the same overridable raw base as
-# the downloads (rather than a separate hardcoded GitHub API host), so the
-# whole fetch path — listing and downloading — can be pointed at a local
-# file:// fixture tree in tests, with no network and nothing to stub.
+# Populate the cache for a theme on first use. The file list comes from the
+# theme's vendored backgrounds.index, NOT from the network: the GitHub contents
+# API cannot be pointed at a local fixture for tests and is rate-limited at
+# runtime, and upstream ships no index file of its own. tools/sync-themes writes
+# the index at vendor time, when it already has API access. Only the per-file
+# downloads hit the network, pinned to a fixed upstream revision.
 bg_fetch() {
-  local theme dir manifest n
+  local theme dir names n
   theme=$(current_theme); [ -n "$theme" ] || return 0
   dir=$(bg_dir)
   [ -z "$(ls -A "$dir" 2>/dev/null)" ] || return 0
   mkdir -p "$dir"
-  # shellcheck disable=SC2086 # OMAMAC_FETCH is a command + flags, word-split on purpose.
-  manifest=$($OMAMAC_FETCH "${OMARCHY_RAW}/master/themes/${theme}/backgrounds/index" 2>/dev/null)
-  [ -n "$manifest" ] || { log_warn "no backgrounds upstream for ${theme}"; return 0; }
+  names=$(cat "${THEMES_DIR}/${theme}/backgrounds.index" 2>/dev/null)
+  [ -n "$names" ] || { log_warn "no backgrounds.index for ${theme}"; return 0; }
   while IFS= read -r n; do
     [ -n "$n" ] || continue
-    # shellcheck disable=SC2086
-    $OMAMAC_FETCH -o "${dir}/${n}" "${OMARCHY_RAW}/master/themes/${theme}/backgrounds/${n}" 2>/dev/null \
+    # shellcheck disable=SC2086 # OMAMAC_FETCH is a command + flags, word-split on purpose.
+    $OMAMAC_FETCH -o "${dir}/${n}" "${OMARCHY_RAW}/${OMAMAC_OMARCHY_REV}/themes/${theme}/backgrounds/${n}" 2>/dev/null \
       || log_warn "could not fetch ${n}"
-  done <<< "$manifest"
+  done <<< "$names"
 }
 
 bg_list() { bg_fetch; ls -1 "$(bg_dir)" 2>/dev/null | sort; }
