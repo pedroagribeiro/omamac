@@ -3,7 +3,11 @@
 // just what substrings appear in its source. Usage:
 //   OMAMAC_JSON='{...}' node menu_page_driver.js <path-to-menu.html> <scenario>
 // Scenarios: enter-enter (root -> first submenu -> select first item),
-//            escape (root -> close).
+//            escape (root -> close),
+//            bg-render-thrice (root -> Background, then two more renders
+//            with no thumbnails ever supplied by the host — reproduces the
+//            re-render-while-pending path that must only request a preview
+//            once per name).
 // Prints the captured window.webkit.messageHandlers.omamac.postMessage calls
 // as a JSON array on stdout.
 'use strict';
@@ -101,6 +105,13 @@ switch (scenario) {
     break;
   case 'escape':
     fireKey('Escape');
+    break;
+  case 'bg-render-thrice':
+    fireKey('ArrowDown'); // root: Theme -> Font
+    fireKey('ArrowDown'); // root: Font -> Background
+    fireKey('Enter');     // enter Background — first render() call
+    fireKey('ArrowDown'); // second render() call, no thumbs supplied meanwhile
+    fireKey('ArrowDown'); // third render() call, ditto
     break;
   default:
     console.error('unknown scenario: ' + scenario);

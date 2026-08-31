@@ -10,19 +10,26 @@ local HOME = os.getenv("HOME")
 -- environment), then the OMAMAC_DIR env var (set for non-GUI invocations,
 -- e.g. `hs` CLI or tests), then the checkout path as a last resort.
 local OMAMAC = OMAMAC_DIR or os.getenv("OMAMAC_DIR") or (HOME .. "/personal/omamac")
+-- OMAMAC_BIN (written by the generated init.lua alongside OMAMAC_DIR) points
+-- at the WRAPPED binary — flake.nix's makeWrapper prefixes it with jq/curl/
+-- fontconfig/bash on PATH. Falling back to OMAMAC .. "/bin/omamac" would run
+-- the unwrapped copy under $out/share/omamac, which has only the hardcoded
+-- PATH below to find those tools — silently breaking `font --list` and
+-- `menu-data` on a Mac without them on one of those literal paths.
+local OMAMAC_BIN_PATH = OMAMAC_BIN or os.getenv("OMAMAC_BIN") or (OMAMAC .. "/bin/omamac")
 local PATH = "/opt/homebrew/bin:/run/current-system/sw/bin:" ..
              HOME .. "/.nix-profile/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 local function shquote(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
 
 local function run(args)
-  local cmd = string.format("PATH=%s %s/bin/omamac %s", PATH, shquote(OMAMAC),
+  local cmd = string.format("PATH=%s %s %s", PATH, shquote(OMAMAC_BIN_PATH),
     table.concat(hs.fnutils.imap(args, shquote), " "))
   return hs.execute(cmd) or ""
 end
 
 local function runAsync(args, done)
-  local cmd = string.format("PATH=%s %s/bin/omamac %s", PATH, shquote(OMAMAC),
+  local cmd = string.format("PATH=%s %s %s", PATH, shquote(OMAMAC_BIN_PATH),
     table.concat(hs.fnutils.imap(args, shquote), " "))
   hs.task.new("/bin/sh", done, { "-c", cmd }):start()
 end

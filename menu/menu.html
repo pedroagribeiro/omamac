@@ -70,6 +70,9 @@
 
   let level = "root", sel = 0, filter = "";
   const thumbs = {};                       // basename -> data URI, filled by the host
+  const requested = new Set();             // names already asked for a preview, so
+                                            // render()/omamacSetPreview() re-runs
+                                            // never re-send for the same name
   const el = { crumb: crumb, list: list, filter: document.getElementById("filter") };
 
   const visible = () => {
@@ -86,8 +89,17 @@
       row.className = "row" + (i === sel ? " on" : "");
       if (L.preview) {
         const img = document.createElement("img");
-        if (thumbs[name]) img.src = thumbs[name];
-        else send({ action: "preview", name });   // lazy: host pushes it back
+        if (thumbs[name]) {
+          img.src = thumbs[name];
+        } else if (!requested.has(name)) {
+          // lazy: host pushes it back via omamacSetPreview. Guarded on
+          // `requested` so a re-render (every keystroke in the filter box,
+          // every omamacSetPreview callback) never re-sends for a name
+          // that's already in flight — without this it's O(N^2) sips spawns,
+          // several racing to write the same --out path at once.
+          requested.add(name);
+          send({ action: "preview", name });
+        }
         row.append(img);
       }
       const n = document.createElement("span");

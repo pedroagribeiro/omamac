@@ -73,4 +73,23 @@ test_escape_at_root_posts_close() {
   assert_eq '{"action":"close"}' "$msg"
 }
 
+test_preview_is_requested_only_once_per_name_across_renders() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # Three renders of the Background level, no thumbnail ever supplied by the
+  # host in between (omamacSetPreview is never called). Without a per-name
+  # "already requested" guard, every render re-sends a preview request for
+  # every name still lacking a thumbnail — O(N^2) sips spawns, and it never
+  # stops for a wallpaper whose conversion keeps failing.
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":["a.jpg","b.jpg","c.jpg"]},"colors":{}}'
+  local out; out=$(run_driver "$data" "bg-render-thrice")
+  local previews; previews=$(printf '%s' "$out" | jq -c '[.[] | select(.action == "preview")]')
+  local total; total=$(printf '%s' "$previews" | jq 'length')
+  assert_eq 3 "$total" "each of the 3 background names must be requested exactly once across 3 renders"
+  local a_count; a_count=$(printf '%s' "$previews" | jq '[.[] | select(.name == "a.jpg")] | length')
+  assert_eq 1 "$a_count" "a.jpg must be requested exactly once, not once per render"
+}
+
 run_tests

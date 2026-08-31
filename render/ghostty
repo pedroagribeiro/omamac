@@ -11,17 +11,8 @@ toml="${theme_dir}/colors.toml"
 
 mkdir -p "${root}/ghostty/themes"
 
-# Print '#rrggbb' for a colour key. A theme missing the key must never produce a
-# malformed line like `#` — warn and fall back, so the target's parser still
-# reads valid syntax.
-c() {
-  local v; v=$(omamac_color "$toml" "$1")
-  if [ -z "$v" ]; then
-    log_warn "theme $(basename "$theme_dir") is missing colour '$1'; using 000000"
-    v="000000"
-  fi
-  printf '#%s' "$v"
-}
+# Shared hex-with-fallback lookup — see lib/colors.sh:omamac_hex_or_warn.
+c() { omamac_hex_or_warn "$toml" "$1" "$(basename "$theme_dir")"; }
 
 {
   for i in $(seq 0 15); do
@@ -36,6 +27,13 @@ c() {
 
 {
   printf 'theme = omamac\n'
+  # A `theme` include only supplies values the user hasn't set explicitly, so
+  # a cursor-color line in themes/omamac is dead against a config that sets
+  # one (e.g. ~/.dotfiles' committed `cursor-color = #ffffff`). omamac.conf is
+  # a plain config-file include, applied LAST — later values win there — so
+  # emitting cursor-color here is what actually makes the theme's cursor
+  # colour take effect over an explicit user setting.
+  printf 'cursor-color = %s\n' "$(c cursor)"
   if [ -n "$font" ]; then
     # font-family accumulates into a fallback chain in Ghostty; reset it first
     # or the committed family stays primary.

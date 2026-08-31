@@ -33,4 +33,24 @@ test_speaks_the_page_contract() {
   assert_contains "$src" "window.OMAMAC"
 }
 
+test_resolves_omamac_bin_with_wrapped_fallback_chain() {
+  local src; src=$(cat "$HOST")
+  # OMAMAC_BIN (set by the generated init.lua alongside OMAMAC_DIR) must be
+  # preferred — it points at the WRAPPED binary flake.nix's makeWrapper
+  # prefixes with jq/curl/fontconfig/bash on PATH. The unwrapped
+  # OMAMAC .. "/bin/omamac" fallback stays for non-Nix / test invocations.
+  assert_contains "$src" "OMAMAC_BIN_PATH = OMAMAC_BIN"
+  assert_contains "$src" 'os.getenv("OMAMAC_BIN")'
+  assert_contains "$src" 'OMAMAC .. "/bin/omamac"'
+}
+
+test_run_and_runasync_invoke_the_resolved_binary() {
+  local src; src=$(cat "$HOST")
+  # run() and runAsync() must both shell out to OMAMAC_BIN_PATH, not build
+  # "OMAMAC .. /bin/omamac" directly at the call site — that would bypass the
+  # OMAMAC_BIN preference above entirely.
+  local n; n=$(printf '%s' "$src" | grep -c 'shquote(OMAMAC_BIN_PATH)')
+  assert_eq 2 "$n" "run() and runAsync() must both invoke the resolved OMAMAC_BIN_PATH"
+}
+
 run_tests

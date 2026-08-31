@@ -23,19 +23,47 @@ ghostty_reload() {
   "$OMAMAC_KILL" -USR2 $pids 2>/dev/null || return 1
 }
 
+# Apply this theme's first cached (or freshly fetched) wallpaper, unless the
+# recorded background already points into its cache directory. Reuses
+# omamac-bg's --list/set rather than re-deriving the cache path or the
+# "first" ordering here. Non-fatal: a theme with no cached/fetchable
+# backgrounds is not an error, and a wallpaper failure never fails the
+# switch — only render/ghostty's colors.toml check is a hard failure.
+apply_theme_wallpaper() {
+  local name="$1" cache_dir cur_bg first
+  cache_dir="${OMAMAC_CACHE}/backgrounds/${name}"
+  cur_bg=$(omamac_state_get background)
+  case "$cur_bg" in
+    "${cache_dir}/"*) return 0 ;;
+  esac
+  first=$("${OMAMAC_DIR}/bin/omamac-bg" --list 2>/dev/null | head -1)
+  [ -n "$first" ] || return 0
+  "${OMAMAC_DIR}/bin/omamac-bg" "$first" >/dev/null 2>&1 || log_warn "could not set wallpaper for ${name}"
+}
+
 theme_set() {
   local name="$1" dir font
   dir="${THEMES_DIR}/${name}"
   [ -d "$dir" ] || { log_error "unknown theme: ${name}"; return 1; }
+  # The single hard-failure condition: a theme this can't even resolve
+  # colours for. render/ghostty also checks this, but it doubles as the
+  # renderer's OWN failure signal (e.g. an unwritable ~/.config/ghostty, a
+  # full disk) — those must not abort the switch, since nvim/btop/bat/macos
+  # can and should still apply. Checking it here, explicitly, is what keeps
+  # "theme unresolvable" and "one target's render failed" from being
+  # conflated into the same exit code.
+  [ -f "${dir}/colors.toml" ] || { log_error "theme ${name} has no colors.toml"; return 1; }
 
   font=$(omamac_state_get font)
-  "${OMAMAC_DIR}/render/ghostty" "$dir" "$CONFIG_ROOT" "$font" || return 1
+  "${OMAMAC_DIR}/render/ghostty" "$dir" "$CONFIG_ROOT" "$font" || log_warn "ghostty render failed"
   "${OMAMAC_DIR}/render/nvim" "$dir" "$OMAMAC_STATE" || log_warn "nvim render failed"
   "${OMAMAC_DIR}/render/btop" "$dir" "$CONFIG_ROOT" || log_warn "btop render failed"
   "${OMAMAC_DIR}/render/bat" "$dir" "$CONFIG_ROOT" || log_warn "bat render failed"
   "${OMAMAC_DIR}/render/macos" "$dir" || log_warn "could not set system appearance"
 
   omamac_state_set theme.name "$name"
+  apply_theme_wallpaper "$name"
+
   if ghostty_reload; then
     log_info "Ghostty: reloaded ${name}."
   else

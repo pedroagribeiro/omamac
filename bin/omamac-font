@@ -8,7 +8,7 @@ FCLIST="${OMAMAC_FCLIST:-fc-list}"
 
 font_list() {
   "$FCLIST" :spacing=100 -f "%{family[0]}\n" 2>/dev/null \
-    | grep -v -i -E 'emoji|signwriting' | sort -u
+    | grep -v -i -E 'emoji|signwriting' | grep -v -E '^\.' | sort -u
 }
 
 font_set() {

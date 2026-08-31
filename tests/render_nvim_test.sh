@@ -72,4 +72,37 @@ test_missing_colour_key_warns_and_never_emits_bare_hash() {
   esac
 }
 
+test_reload_uses_terminal_safe_escape_not_esc() {
+  # <Esc> does not leave terminal-insert mode, so if a `:terminal` split is
+  # focused when the reload fires, the whole ":luafile ...<CR>" payload gets
+  # typed into and executed by the user's shell instead of Neovim. <C-\><C-N>
+  # forces normal mode from every mode, terminal mode included.
+  if ! command -v nc >/dev/null 2>&1; then
+    fail "no nc available to fake a Neovim server socket — cannot verify remote-send"
+    return
+  fi
+  local log="$TMPDIR_TEST/nvim-calls.log"
+  cat > "$TMPDIR_TEST/nvim-stub" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$NVIM_LOG"
+EOF
+  chmod +x "$TMPDIR_TEST/nvim-stub"
+  export OMAMAC_NVIM="$TMPDIR_TEST/nvim-stub" NVIM_LOG="$log"
+  : > "$log"
+  local sockdir="$HOME/.cache/nvim/servers" sock nc_pid
+  mkdir -p "$sockdir"
+  sock="$sockdir/fake.sock"
+  nc -lU "$sock" >/dev/null 2>&1 &
+  nc_pid=$!
+  sleep 0.2
+  "$OMAMAC_ROOT/render/nvim" "$OMAMAC_ROOT/tests/fixtures/dark" "$OMAMAC_STATE"
+  kill "$nc_pid" 2>/dev/null
+  wait "$nc_pid" 2>/dev/null
+  local out; out=$(cat "$log")
+  assert_contains "$out" '<C-\><C-N>:luafile'
+  case "$out" in
+    *'<Esc>:luafile'*) fail "must not send <Esc> — it never leaves terminal-insert mode" ;;
+  esac
+}
+
 run_tests

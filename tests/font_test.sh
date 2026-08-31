@@ -5,7 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 setup_font_env() {
   cat > "$TMPDIR_TEST/fc-list" <<'EOF'
 #!/usr/bin/env bash
-printf 'JetBrainsMono Nerd Font\nMenlo Nerd Font\nJetBrainsMono Nerd Font\nNoto Color Emoji\n'
+printf 'JetBrainsMono Nerd Font\nMenlo Nerd Font\nJetBrainsMono Nerd Font\nNoto Color Emoji\n.LastResort\n'
 EOF
   chmod +x "$TMPDIR_TEST/fc-list"
   export OMAMAC_FCLIST="$TMPDIR_TEST/fc-list"
@@ -23,8 +23,11 @@ EOF
   export OMAMAC_PS="$TMPDIR_TEST/ps-none"
 }
 
-test_list_dedupes_sorts_and_drops_emoji() {
+test_list_dedupes_sorts_and_drops_emoji_and_dot_families() {
   setup_font_env
+  # .LastResort (and macOS's other dot-prefixed internal families, e.g.
+  # .SF NS Mono, .Times LT MM) are not user-selectable — Ghostty renders every
+  # glyph as a tofu box under .LastResort. They must never appear in the list.
   assert_eq "JetBrainsMono Nerd Font
 Menlo Nerd Font" "$("$OMAMAC_BIN" font --list)"
 }

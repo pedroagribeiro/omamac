@@ -76,4 +76,65 @@ test_reports_reload_when_ghostty_is_running() {
   assert_contains "$out" "reloaded"
 }
 
+test_switching_theme_applies_its_first_cached_wallpaper() {
+  setup_themes
+  mkdir -p "$OMAMAC_CACHE/backgrounds/tokyo-night"
+  : > "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg"
+  : > "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg"
+  "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
+  assert_eq "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg" "$("$OMAMAC_BIN" bg --current)"
+}
+
+test_switching_theme_with_no_cached_backgrounds_does_not_fail() {
+  setup_themes
+  # tokyo-night here has no backgrounds.index (setup_themes only copies
+  # colors.toml), so there is nothing to fetch or apply — that must be a
+  # no-op, not an error.
+  local rc
+  "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1; rc=$?
+  assert_eq 0 "$rc" "a theme with no cached/fetchable backgrounds must not fail the switch"
+  assert_eq "" "$("$OMAMAC_BIN" bg --current)"
+}
+
+test_switching_theme_again_leaves_an_already_correct_wallpaper_alone() {
+  setup_themes
+  mkdir -p "$OMAMAC_CACHE/backgrounds/tokyo-night"
+  : > "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg"
+  : > "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg"
+  "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
+  "$OMAMAC_BIN" bg 2-beta.jpg >/dev/null 2>&1
+  "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
+  assert_eq "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg" "$("$OMAMAC_BIN" bg --current)"
+}
+
+test_ghostty_render_failure_still_records_theme_name() {
+  setup_themes
+  # A colors.toml that resolves fine, but whose ghostty render fails for an
+  # unrelated reason (an unwritable ~/.config/ghostty, a full disk, ...).
+  # theme_set must still finish and record theme.name — only an unresolvable
+  # theme (no colors.toml) is a hard failure now.
+  local fake="$TMPDIR_TEST/fake-omamac"
+  mkdir -p "$fake"
+  cp -r "$OMAMAC_ROOT/bin" "$OMAMAC_ROOT/lib" "$OMAMAC_ROOT/render" "$fake/"
+  cat > "$fake/render/ghostty" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+  chmod +x "$fake/render/ghostty"
+  local out rc
+  out=$(OMAMAC_DIR="$fake" "$OMAMAC_BIN" theme tokyo-night 2>&1); rc=$?
+  assert_eq 0 "$rc" "a ghostty render failure alone must not fail the theme switch"
+  assert_contains "$out" "ghostty render failed"
+  assert_eq "tokyo-night" "$(OMAMAC_DIR="$fake" "$OMAMAC_BIN" theme --current)"
+}
+
+test_missing_colors_toml_is_still_a_hard_failure_even_though_ghostty_is_now_a_warning() {
+  setup_themes
+  mkdir -p "$OMAMAC_THEMES_DIR/no-colors"
+  local rc
+  "$OMAMAC_BIN" theme no-colors >/dev/null 2>&1; rc=$?
+  assert_eq 1 "$rc" "a theme with no colors.toml must still hard-fail"
+  assert_eq "" "$("$OMAMAC_BIN" theme --current)"
+}
+
 run_tests

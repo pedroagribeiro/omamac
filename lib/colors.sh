@@ -58,6 +58,22 @@ omamac_color() {
   printf '%s\n' "$val" | tr '[:upper:]' '[:lower:]'
 }
 
+# Print '#rrggbb' for a colour key. A theme missing the key must never produce
+# a malformed line like `#` — warn and fall back, so the target's parser still
+# reads valid syntax. Shared by every renderer that emits hex colours (ghostty,
+# nvim, btop, bat) so a fallback or warning-format change happens in one place
+# instead of four. $3 is the theme's display name for the warning (callers
+# pass `basename "$theme_dir"`), not the file path.
+omamac_hex_or_warn() {
+  local toml="$1" key="$2" theme_name="$3" v
+  v=$(omamac_color "$toml" "$key")
+  if [ -z "$v" ]; then
+    log_warn "theme ${theme_name} is missing colour '${key}'; using 000000"
+    v="000000"
+  fi
+  printf '#%s' "$v"
+}
+
 # Exit 0 if the theme's background is light. Reads an explicit `mode` key
 # first (Omarchy v4.0.x release tags ship one); falls back to computed
 # integer sRGB relative luminance (2126 R, 7152 G, 722 B, scaled to 0..255;

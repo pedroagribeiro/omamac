@@ -105,6 +105,16 @@ pcall(vim.fn.serverstart, sockdir .. "/" .. vim.fn.getpid() .. ".sock")
 The socket lets a theme switch push the new colorscheme into every running
 Neovim instance instead of only the next one you open.
 
+If your config also has something like `vim-lumen` watching the macOS
+appearance to switch colorschemes on its own (e.g. between a light and dark
+variant of a different theme plugin), point its light/dark callbacks at
+omamac's generated colorscheme too, not at that other theme — otherwise it
+will win the race on every light↔dark flip and clobber whatever omamac just
+rendered. The other theme plugin can stay installed as a fallback for before
+omamac's state file exists (a fresh machine, or before the first `omamac
+theme` run); vim-lumen's job is only to signal *when* the appearance flips,
+never to decide *what* colorscheme to apply once omamac is in the picture.
+
 **bat** — point the `cat` alias at the generated theme, e.g. in your shell rc:
 ```bash
 alias cat='bat -p --theme=omamac'

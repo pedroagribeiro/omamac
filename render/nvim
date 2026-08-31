@@ -10,17 +10,8 @@ theme_dir="$1"; state="$2"; toml="${theme_dir}/colors.toml"
 [ -f "$toml" ] || { log_error "no colors.toml in ${theme_dir}"; exit 1; }
 mkdir -p "${state}/current"
 
-# Print '#rrggbb' for a colour key. A theme missing the key must never produce a
-# malformed line like `#` — warn and fall back, so the target's parser still
-# reads valid syntax.
-c() {
-  local v; v=$(omamac_color "$toml" "$1")
-  if [ -z "$v" ]; then
-    log_warn "theme $(basename "$theme_dir") is missing colour '$1'; using 000000"
-    v="000000"
-  fi
-  printf '#%s' "$v"
-}
+# Shared hex-with-fallback lookup — see lib/colors.sh:omamac_hex_or_warn.
+c() { omamac_hex_or_warn "$toml" "$1" "$(basename "$theme_dir")"; }
 if omamac_is_light "$toml"; then bgmode=light; else bgmode=dark; fi
 
 cat > "${state}/current/omamac.lua" <<EOF
@@ -79,9 +70,14 @@ vim.api.nvim_set_hl(0, "@string",   { link = "String" })
 vim.api.nvim_set_hl(0, "@comment",  { link = "Comment" })
 EOF
 
-# Live-reload every running Neovim that exposes a socket.
+# Live-reload every running Neovim that exposes a socket. <C-\><C-N> forces
+# normal mode from every mode, including terminal mode — unlike <Esc>, which
+# a focused `:terminal` split just types into and its underlying shell runs,
+# rather than leaving. Using <Esc> here would mean a theme switch that fires
+# while a terminal split is focused types and executes
+# ":luafile .../omamac.lua<CR>" in the user's shell.
 for sock in "$HOME"/.cache/nvim/servers/*; do
   [ -S "$sock" ] || continue
   "$NVIM" --server "$sock" --remote-send \
-    "<Esc>:luafile ${state}/current/omamac.lua<CR>" 2>/dev/null || true
+    "<C-\><C-N>:luafile ${state}/current/omamac.lua<CR>" 2>/dev/null || true
 done

@@ -44,6 +44,19 @@ test_conf_resets_font_list_before_setting_font() {
   assert_contains "$second" 'font-family = "JetBrainsMono Nerd Font"'
 }
 
+test_conf_also_carries_the_theme_cursor_color() {
+  local root="$TMPDIR_TEST/cfg8"
+  "$OMAMAC_ROOT/render/ghostty" "$THEME" "$root"
+  local out; out=$(cat "$root/ghostty/omamac.conf")
+  # omamac.conf is a plain `config-file` include, applied LAST — later values
+  # win there, unlike the `theme` include (themes/omamac), which only fills
+  # in values the user hasn't set explicitly. So THIS line, not the
+  # also-correct one in themes/omamac, is what actually overrides a user's
+  # own explicit `cursor-color` setting (e.g. ~/.dotfiles' committed
+  # `cursor-color = #ffffff`).
+  assert_contains "$out" "cursor-color = #c0caf5"
+}
+
 test_is_idempotent() {
   local root="$TMPDIR_TEST/cfg5"
   "$OMAMAC_ROOT/render/ghostty" "$THEME" "$root" "Menlo Nerd Font"
