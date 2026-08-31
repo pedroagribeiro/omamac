@@ -2,6 +2,10 @@
 # omamac-menu-data — one JSON blob describing everything the menu renders.
 set -uo pipefail
 OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/colors.sh"
+
+THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
 
 # jq -R -s -c 'split("\n") | map(select(length > 0))' turns newline-separated
 # output into a JSON array with correct escaping, so a name containing a quote
@@ -12,8 +16,26 @@ theme_cur=$("${OMAMAC_DIR}/bin/omamac-theme" --current)
 font_cur=$("${OMAMAC_DIR}/bin/omamac-font" --current)
 bg_cur=$("${OMAMAC_DIR}/bin/omamac-bg" --current)
 
+# The menu paints itself in the active theme, so the host never flashes an
+# unthemed panel. omamac_color is the only correct reader for colors.toml —
+# it resolves Omarchy's named-key schema, not a synthetic one we'd have to
+# maintain in parallel. A missing theme/file is a warning, not a hard error:
+# omamac_color already returns "" for it, so the menu still renders (with
+# menu.html's built-in defaults) rather than the page failing to load.
+colors_file="${THEMES_DIR}/${theme_cur}/colors.toml"
+[ -f "$colors_file" ] || [ -z "$theme_cur" ] || log_warn "no colors.toml for ${theme_cur}"
+# Prints "#rrggbb" for a resolved colour, "" otherwise — this script is the
+# consumer that puts the leading '#' on, per the project's hex-value contract.
+hash_color() { local v; v=$(omamac_color "$colors_file" "$1"); [ -n "$v" ] && printf '#%s' "$v" || printf ''; }
+bg_color=$(hash_color background)
+fg_color=$(hash_color foreground)
+accent_color=$(hash_color accent)
+sel_color=$(hash_color selection_background)
+
 jq -n -c \
   --arg tc "$theme_cur" --argjson to "$("${OMAMAC_DIR}/bin/omamac-theme" --list | arr)" \
   --arg fc "$font_cur"  --argjson fo "$("${OMAMAC_DIR}/bin/omamac-font"  --list | arr)" \
   --arg bc "$bg_cur"    --argjson bo "$("${OMAMAC_DIR}/bin/omamac-bg"    --list | arr)" \
-  '{theme:{current:$tc,options:$to},font:{current:$fc,options:$fo},bg:{current:$bc,options:$bo}}'
+  --arg bgc "$bg_color" --arg fgc "$fg_color" --arg ac "$accent_color" --arg sc "$sel_color" \
+  '{theme:{current:$tc,options:$to},font:{current:$fc,options:$fo},bg:{current:$bc,options:$bo},
+    colors:{background:$bgc,foreground:$fgc,accent:$ac,selection_background:$sc}}'

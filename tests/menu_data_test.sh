@@ -57,6 +57,28 @@ test_emits_valid_json_when_everything_is_empty() {
   assert_eq "" "$(printf '%s' "$out" | jq -r .theme.current)"
 }
 
+test_reports_colors_from_the_current_theme() {
+  setup_menu
+  local out; out=$("$OMAMAC_BIN" menu-data)
+  # tests/fixtures/dark/colors.toml: background=#1a1b26 foreground=#a9b1d6
+  # accent=#7aa2f7 selection=#292e42 — four distinct values, so asserting
+  # all four (not just background) catches a field getting swapped with
+  # another rather than only checking the shape is right.
+  assert_eq "#1a1b26" "$(printf '%s' "$out" | jq -r .colors.background)"
+  assert_eq "#a9b1d6" "$(printf '%s' "$out" | jq -r .colors.foreground)"
+  assert_eq "#7aa2f7" "$(printf '%s' "$out" | jq -r .colors.accent)"
+  assert_eq "#292e42" "$(printf '%s' "$out" | jq -r .colors.selection_background)"
+}
+
+test_colors_background_is_hash_rrggbb() {
+  setup_menu
+  local out; out=$("$OMAMAC_BIN" menu-data)
+  case "$(printf '%s' "$out" | jq -r .colors.background)" in
+    '#'[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+    *) fail "colors.background is not a lowercase #rrggbb string" ;;
+  esac
+}
+
 test_names_with_quotes_do_not_break_json() {
   setup_menu
   mkdir -p "$OMAMAC_THEMES_DIR/we\"ird"
