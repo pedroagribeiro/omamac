@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# render/macos <theme-dir> — match the system appearance to the theme.
+set -uo pipefail
+_here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "${_here}/lib/colors.sh"
+OSASCRIPT="${OMAMAC_OSASCRIPT:-osascript}"
+
+toml="$1/colors.toml"
+if omamac_is_light "$toml"; then dark=false; else dark=true; fi
+"$OSASCRIPT" -e "tell application \"System Events\" to tell appearance preferences to set dark mode to ${dark}"
