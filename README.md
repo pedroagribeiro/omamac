@@ -31,10 +31,31 @@ by hand.
 ### Nix / home-manager (this machine)
 
 `~/.dotfiles` wires this repo in as a flake input and a home-manager module
-(`home/programs/omamac/omamac.nix`). It puts `omamac` on `PATH` and writes
-`~/.hammerspoon/init.lua` to load the Hammerspoon host. Running `bin/rebuild`
-in `~/.dotfiles` activates it — see the dotfiles README/that repo's own docs
-for what that entails.
+(`home/programs/omamac/omamac.nix`) that puts `omamac` on `PATH` and writes
+`~/.hammerspoon/init.lua` to load the Hammerspoon host. That module is gated
+like every other program module in that repo: `bin/rebuild` alone does
+**not** turn it on. To actually get omamac running via Nix:
+
+1. Set `dotfiles.programs.omamac.enable = true;` in
+   `~/.dotfiles/home/users/pedroribeiro.nix`. Without this,
+   `home/lib/mkHomeModule.nix` gates the whole module off (it defaults to
+   `false`, same as every other `dotfiles.programs.<name>.enable`), and
+   `bin/rebuild` will silently do nothing for omamac.
+2. Install Hammerspoon yourself first — the module manages no Homebrew cask,
+   only the package and the generated `init.lua` (`brew install --cask
+   hammerspoon`, or via nix-darwin/home-manager if you prefer).
+3. **Back up your current `~/.hammerspoon/init.lua`** before rebuilding.
+   `home.file` overwrites it unconditionally, and if you already have one
+   (e.g. holding an older omamac host), that content is gone once
+   `bin/rebuild` runs.
+4. Run `bin/rebuild` in `~/.dotfiles` to activate the home-manager
+   generation, install `omamac` onto `PATH`, and regenerate
+   `~/.hammerspoon/init.lua`.
+5. Launch Hammerspoon and grant it **Accessibility** permission when macOS
+   prompts (System Settings > Privacy & Security > Accessibility > enable
+   Hammerspoon) — required on this path exactly as on the Homebrew path
+   below.
+6. Press ⌘⌥Space.
 
 **The flake input is a local path.** omamac has not been published anywhere,
 so `~/.dotfiles/flake.nix` currently points at it as

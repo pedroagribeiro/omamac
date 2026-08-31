@@ -32,11 +32,9 @@
         };
       });
 
-      checks = forAll (pkgs: {
-        tests = pkgs.runCommand "omamac-tests" { buildInputs = [ pkgs.bash pkgs.jq ]; } ''
-          cp -r ${./.} src && chmod -R +w src && cd src
-          bash tests/run && touch $out
-        '';
-      });
+      # No `checks` output on purpose. The suite needs macOS's `plutil`, a Lua
+      # front-end and a JS engine, none of which exist in a Nix sandbox — a
+      # checks output that can never pass is worse than none. `./tests/run` is
+      # the test entry point, and the README says so.
     };
 }
