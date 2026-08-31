@@ -38,7 +38,11 @@ local function onMessage(message)
     local wv = menuWV
     runAsync({ "preview", b.name }, function(_, stdout)
       stdout = (stdout or ""):gsub("%s+$", "")
-      if stdout ~= "" and wv then
+      -- Compare IDENTITY, not truthiness. `wv` was captured while the menu was
+      -- open, so it is always non-nil here and a bare `and wv` guards nothing.
+      -- What can actually happen is the panel being closed (menuWV = nil) or
+      -- replaced by a newly-opened one while this thumbnail was generating.
+      if stdout ~= "" and wv == menuWV then
         pcall(function()
           wv:evaluateJavaScript("window.omamacSetPreview(" ..
             hs.json.encode(b.name) .. "," .. hs.json.encode(stdout) .. ")")
@@ -54,8 +58,11 @@ local function openMenu()
   hideMenu()
   local f = io.open(OMAMAC .. "/menu/menu.html", "r")
   if not f then hs.alert.show("omamac: menu.html not found"); return end
-  local html = "<script>window.OMAMAC = " .. run({ "menu-data" }) .. ";</script>\n" ..
-               f:read("*a")
+  -- Escape `<` so a name containing the literal text "</script>" cannot close
+  -- the tag early and corrupt the page. < is valid JSON and parses back to
+  -- "<" in JS, so the data is unchanged.
+  local json = run({ "menu-data" }):gsub("<", "\\u003c")
+  local html = "<script>window.OMAMAC = " .. json .. ";</script>\n" .. f:read("*a")
   f:close()
 
   local scr = hs.screen.mainScreen():frame()
