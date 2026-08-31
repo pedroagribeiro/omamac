@@ -10,6 +10,14 @@ setup_themes() {
   export OMAMAC_CONFIG_ROOT="$TMPDIR_TEST/config"
   export OMAMAC_KILL="true"        # never signal a real process from tests
   export OMAMAC_OSASCRIPT="true"
+  # Stub the process lookup too. Without this the tests read the REAL process
+  # table, so which branch of ghostty_reload runs depends on whether the
+  # developer happens to have Ghostty open.
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$TMPDIR_TEST/ps-none"
+  printf '#!/usr/bin/env bash\nprintf "  501 /Applications/Ghostty.app/Contents/MacOS/ghostty\\n"\n' \
+    > "$TMPDIR_TEST/ps-running"
+  chmod +x "$TMPDIR_TEST/ps-none" "$TMPDIR_TEST/ps-running"
+  export OMAMAC_PS="$TMPDIR_TEST/ps-none"
 }
 
 test_list_is_sorted() {
@@ -37,7 +45,6 @@ test_set_renders_ghostty() {
 
 test_set_applies_stored_font() {
   setup_themes
-  omamac_state_set() { :; }   # not used here; font comes from state file
   mkdir -p "$OMAMAC_STATE"; printf 'JetBrainsMono Nerd Font\n' > "$OMAMAC_STATE/font"
   "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
   assert_contains "$(cat "$OMAMAC_CONFIG_ROOT/ghostty/omamac.conf")" 'font-family = "JetBrainsMono Nerd Font"'
@@ -53,8 +60,20 @@ test_unknown_theme_exits_1_and_leaves_current_untouched() {
 
 test_succeeds_when_ghostty_not_running() {
   setup_themes
-  local rc; "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1; rc=$?
+  export OMAMAC_PS="$TMPDIR_TEST/ps-none"
+  local out rc
+  out=$("$OMAMAC_BIN" theme tokyo-night 2>&1); rc=$?
   assert_eq 0 "$rc" "a theme switch must succeed with no Ghostty running"
+  assert_contains "$out" "not running"
+}
+
+test_reports_reload_when_ghostty_is_running() {
+  setup_themes
+  export OMAMAC_PS="$TMPDIR_TEST/ps-running"
+  local out rc
+  out=$("$OMAMAC_BIN" theme tokyo-night 2>&1); rc=$?
+  assert_eq 0 "$rc"
+  assert_contains "$out" "reloaded"
 }
 
 run_tests

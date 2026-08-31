@@ -8,6 +8,7 @@ source "${OMAMAC_DIR}/lib/state.sh"
 THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
 CONFIG_ROOT="${OMAMAC_CONFIG_ROOT:-$HOME/.config}"
 OMAMAC_KILL="${OMAMAC_KILL:-kill}"
+OMAMAC_PS="${OMAMAC_PS:-ps}"
 
 theme_list()    { ls -1 "$THEMES_DIR" 2>/dev/null | sort; }
 theme_current() { omamac_state_get theme.name; }
@@ -16,7 +17,7 @@ theme_current() { omamac_state_get theme.name; }
 # pgrep does not match Ghostty's process name, and pkill -f self-matches.
 ghostty_reload() {
   local pids
-  pids=$(ps -axo pid=,comm= | awk '/Ghostty\.app\/Contents\/MacOS\/ghostty$/{print $1}')
+  pids=$("$OMAMAC_PS" -axo pid=,comm= | awk '/Ghostty\.app\/Contents\/MacOS\/ghostty$/{print $1}')
   [ -n "$pids" ] || return 1
   # shellcheck disable=SC2086
   "$OMAMAC_KILL" -USR2 $pids 2>/dev/null || return 1
