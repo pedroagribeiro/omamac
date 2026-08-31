@@ -50,10 +50,12 @@ test_unavailable_font_exits_1() {
 
 test_set_with_no_active_theme_still_records_font() {
   setup_font_env
-  # Asserting only on --current would be identical to test_set_records_current and
-  # would pass whether the no-theme guard exists, is inverted, or is deleted. The
-  # exit code discriminates: without the guard this shells `omamac-theme ""`,
-  # which fails, so font_set returns 1 and never logs.
+  # Pins the contract that a font can be set before any theme is chosen: recorded,
+  # exit 0, logged. Note it does NOT discriminate the `[ -n "$theme" ]` guard —
+  # `omamac-theme ""` hits its own empty-arg case and exits 0, so removing the guard
+  # changes nothing observable here. The guard stays as cheap defence (it avoids a
+  # pointless subprocess, and survives omamac-theme ever rejecting an empty name),
+  # but no test can prove it from outside. Do not "strengthen" this test to try.
   local out rc
   out=$("$OMAMAC_BIN" font "Menlo Nerd Font" 2>&1); rc=$?
   assert_eq 0 "$rc" "setting a font with no active theme must succeed"
