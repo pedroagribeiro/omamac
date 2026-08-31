@@ -5,7 +5,11 @@
 require("hs.ipc")
 
 local HOME = os.getenv("HOME")
-local OMAMAC = os.getenv("OMAMAC_DIR") or (HOME .. "/personal/omamac")
+-- Resolution order: a global set by the generated init.lua (Nix/home-manager
+-- writes the store path in literally, since Hammerspoon.app inherits no shell
+-- environment), then the OMAMAC_DIR env var (set for non-GUI invocations,
+-- e.g. `hs` CLI or tests), then the checkout path as a last resort.
+local OMAMAC = OMAMAC_DIR or os.getenv("OMAMAC_DIR") or (HOME .. "/personal/omamac")
 local PATH = "/opt/homebrew/bin:/run/current-system/sw/bin:" ..
              HOME .. "/.nix-profile/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
