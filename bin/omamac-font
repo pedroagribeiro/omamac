@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# omamac-font [family|--list|--current]
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+FCLIST="${OMAMAC_FCLIST:-fc-list}"
+
+font_list() {
+  "$FCLIST" :spacing=100 -f "%{family[0]}\n" 2>/dev/null \
+    | grep -v -i -E 'emoji|signwriting' | sort -u
+}
+
+font_set() {
+  local family="$1" theme
+  font_list | grep -qxF "$family" || { log_error "font not available: ${family}"; return 1; }
+  omamac_state_set font "$family"
+  theme=$(omamac_state_get theme.name)
+  if [ -n "$theme" ]; then
+    "${OMAMAC_DIR}/bin/omamac-theme" "$theme" || return 1
+  fi
+  log_info "Font set to ${family}."
+}
+
+case "${1:-}" in
+  --list)    font_list ;;
+  --current) omamac_state_get font ;;
+  "")        omamac_state_get font ;;
+  *)         font_set "$1" ;;
+esac
