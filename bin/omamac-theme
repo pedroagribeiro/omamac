@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# omamac-theme [name|--list|--current]
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+
+THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
+CONFIG_ROOT="${OMAMAC_CONFIG_ROOT:-$HOME/.config}"
+OMAMAC_KILL="${OMAMAC_KILL:-kill}"
+
+theme_list()    { ls -1 "$THEMES_DIR" 2>/dev/null | sort; }
+theme_current() { omamac_state_get theme.name; }
+
+# Signal every running Ghostty. Matches the executable path because macOS
+# pgrep does not match Ghostty's process name, and pkill -f self-matches.
+ghostty_reload() {
+  local pids
+  pids=$(ps -axo pid=,comm= | awk '/Ghostty\.app\/Contents\/MacOS\/ghostty$/{print $1}')
+  [ -n "$pids" ] || return 1
+  # shellcheck disable=SC2086
+  "$OMAMAC_KILL" -USR2 $pids 2>/dev/null || return 1
+}
+
+theme_set() {
+  local name="$1" dir font
+  dir="${THEMES_DIR}/${name}"
+  [ -d "$dir" ] || { log_error "unknown theme: ${name}"; return 1; }
+
+  font=$(omamac_state_get font)
+  "${OMAMAC_DIR}/render/ghostty" "$dir" "$CONFIG_ROOT" "$font" || return 1
+  "${OMAMAC_DIR}/render/macos" "$dir" || log_warn "could not set system appearance"
+
+  omamac_state_set theme.name "$name"
+  if ghostty_reload; then
+    log_info "Ghostty: reloaded ${name}."
+  else
+    log_info "Ghostty: applied ${name} (not running; applies on next launch)."
+  fi
+}
+
+case "${1:-}" in
+  --list)    theme_list ;;
+  --current) theme_current ;;
+  "")        theme_current ;;
+  *)         theme_set "$1" ;;
+esac
