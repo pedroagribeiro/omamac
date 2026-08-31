@@ -12,12 +12,20 @@ font_list() {
 }
 
 font_set() {
-  local family="$1" theme
+  local family="$1" theme prev
   font_list | grep -qxF "$family" || { log_error "font not available: ${family}"; return 1; }
+  # theme_set reads the font back out of state, so the write has to come first.
+  # That makes the write speculative: if the re-render fails, roll it back, or
+  # `font --current` would report a font that was never rendered.
+  prev=$(omamac_state_get font)
   omamac_state_set font "$family"
   theme=$(omamac_state_get theme.name)
   if [ -n "$theme" ]; then
-    "${OMAMAC_DIR}/bin/omamac-theme" "$theme" || return 1
+    if ! "${OMAMAC_DIR}/bin/omamac-theme" "$theme"; then
+      omamac_state_set font "$prev"
+      log_error "could not apply font ${family}; reverted to ${prev:-none}"
+      return 1
+    fi
   fi
   log_info "Font set to ${family}."
 }

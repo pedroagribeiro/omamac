@@ -50,8 +50,26 @@ test_unavailable_font_exits_1() {
 
 test_set_with_no_active_theme_still_records_font() {
   setup_font_env
-  "$OMAMAC_BIN" font "Menlo Nerd Font" >/dev/null 2>&1
+  # Asserting only on --current would be identical to test_set_records_current and
+  # would pass whether the no-theme guard exists, is inverted, or is deleted. The
+  # exit code discriminates: without the guard this shells `omamac-theme ""`,
+  # which fails, so font_set returns 1 and never logs.
+  local out rc
+  out=$("$OMAMAC_BIN" font "Menlo Nerd Font" 2>&1); rc=$?
+  assert_eq 0 "$rc" "setting a font with no active theme must succeed"
   assert_eq "Menlo Nerd Font" "$("$OMAMAC_BIN" font --current)"
+  assert_contains "$out" "Font set to"
+}
+
+test_failed_rerender_reverts_font_state() {
+  setup_font_env
+  printf 'tokyo-night\n' > "$OMAMAC_STATE/theme.name"
+  printf 'JetBrainsMono Nerd Font\n' > "$OMAMAC_STATE/font"
+  rm -f "$OMAMAC_THEMES_DIR/tokyo-night/colors.toml"   # force the re-render to fail
+  local rc; "$OMAMAC_BIN" font "Menlo Nerd Font" >/dev/null 2>&1; rc=$?
+  assert_eq 1 "$rc" "a failed re-render must fail the font change"
+  assert_eq "JetBrainsMono Nerd Font" "$("$OMAMAC_BIN" font --current)" \
+    "font state must not advance past a failed render"
 }
 
 run_tests
