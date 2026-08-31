@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 source "$OMAMAC_ROOT/lib/state.sh"
 

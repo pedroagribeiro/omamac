@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 OMAMAC_STATE="${OMAMAC_STATE:-$HOME/.local/state/omamac}"
 OMAMAC_CACHE="${OMAMAC_CACHE:-$HOME/.cache/omamac}"
 
