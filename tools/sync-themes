@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# tools/sync-themes — vendor colors.toml for every Omarchy theme.
+set -euo pipefail
+OMARCHY_REV="${OMARCHY_REV:-v4.0.2}"  # omacom/omarchy release tag (named-colour + mode schema)
+API="https://api.github.com/repos/omacom/omarchy/contents/themes?ref=${OMARCHY_REV}"
+RAW="https://raw.githubusercontent.com/omacom/omarchy/${OMARCHY_REV}/themes"
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+names=$(curl -fsSL "$API" | grep '"name"' | sed 's/.*: "//;s/",\{0,1\}$//')
+[ -n "$names" ] || { echo "could not list upstream themes" >&2; exit 1; }
+
+while IFS= read -r name; do
+  mkdir -p "${root}/themes/${name}"
+  if curl -fsSL -o "${root}/themes/${name}/colors.toml" "${RAW}/${name}/colors.toml"; then
+    # Vendor the background file list so runtime fetching needs no API call.
+    curl -fsSL "https://api.github.com/repos/omacom/omarchy/contents/themes/${name}/backgrounds?ref=${OMARCHY_REV}" \
+      | grep '"name"' | sed 's/.*: "//;s/",\{0,1\}$//' \
+      > "${root}/themes/${name}/backgrounds.index"
+    printf 'vendored %s (%s backgrounds)\n' "$name" "$(wc -l < "${root}/themes/${name}/backgrounds.index" | tr -d ' ')"
+  else
+    printf 'SKIP %s (no colors.toml)\n' "$name" >&2
+    rmdir "${root}/themes/${name}" 2>/dev/null || true
+  fi
+done <<< "$names"

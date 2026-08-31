@@ -8,8 +8,10 @@ test_writes_full_palette() {
   "$OMAMAC_ROOT/render/ghostty" "$THEME" "$root"
   local f="$root/ghostty/themes/omamac"
   assert_eq 16 "$(grep -c '^palette = ' "$f")"
-  assert_contains "$(cat "$f")" "palette = 0=#32344a"
-  assert_contains "$(cat "$f")" "palette = 15=#acb0d0"
+  # tokyo-night's real colors.toml has no color0/color15 of its own — these
+  # resolve through omamac_alias to muted and bright_foreground.
+  assert_contains "$(cat "$f")" "palette = 0=#414868"
+  assert_contains "$(cat "$f")" "palette = 15=#c0caf5"
 }
 
 test_writes_surface_colors() {
@@ -19,8 +21,9 @@ test_writes_surface_colors() {
   assert_contains "$out" "background = #1a1b26"
   assert_contains "$out" "foreground = #a9b1d6"
   assert_contains "$out" "cursor-color = #c0caf5"
-  assert_contains "$out" "selection-background = #7aa2f7"
-  assert_contains "$out" "selection-foreground = #c0caf5"
+  # selection_background/selection_foreground alias to selection/foreground.
+  assert_contains "$out" "selection-background = #292e42"
+  assert_contains "$out" "selection-foreground = #a9b1d6"
 }
 
 test_conf_selects_theme_and_omits_font_when_none_given() {
@@ -59,7 +62,9 @@ test_missing_colors_toml_exits_1() {
 test_missing_colour_key_warns_and_never_emits_bare_hash() {
   local root="$TMPDIR_TEST/cfg7" partial="$TMPDIR_TEST/partial"
   mkdir -p "$partial"
-  grep -v '^color15' "$THEME/colors.toml" > "$partial/colors.toml"
+  # color15 has no literal key of its own — it resolves via omamac_alias to
+  # bright_foreground, so stripping THAT line is what makes it missing.
+  grep -v '^bright_foreground' "$THEME/colors.toml" > "$partial/colors.toml"
   local err; err=$("$OMAMAC_ROOT/render/ghostty" "$partial" "$root" 2>&1)
   assert_contains "$err" "missing colour 'color15'"
   case "$(cat "$root/ghostty/themes/omamac")" in

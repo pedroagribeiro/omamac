@@ -10,12 +10,15 @@ test_writes_theme_file() {
   # One assertion per DISTINCT source colour key the renderer consumes (11 of
   # them), not per emitted line. Sampling two would let a mutant that swaps
   # color2/color5 or drops selection_* pass unnoticed.
+  # selection_background/selection_foreground alias to selection/foreground;
+  # color8 aliases to muted — tokyo-night's real colors.toml has none of
+  # these keys literally.
   assert_contains "$out" 'theme[main_bg]="#1a1b26"'       # background
   assert_contains "$out" 'theme[main_fg]="#a9b1d6"'       # foreground
   assert_contains "$out" 'theme[hi_fg]="#7aa2f7"'         # color4
-  assert_contains "$out" 'theme[selected_bg]="#7aa2f7"'   # selection_background
-  assert_contains "$out" 'theme[selected_fg]="#c0caf5"'   # selection_foreground
-  assert_contains "$out" 'theme[inactive_fg]="#444b6a"'   # color8
+  assert_contains "$out" 'theme[selected_bg]="#292e42"'   # selection_background
+  assert_contains "$out" 'theme[selected_fg]="#a9b1d6"'   # selection_foreground
+  assert_contains "$out" 'theme[inactive_fg]="#414868"'   # color8
   assert_contains "$out" 'theme[proc_misc]="#449dab"'     # color6
   assert_contains "$out" 'theme[mem_box]="#9ece6a"'       # color2
   assert_contains "$out" 'theme[net_box]="#ad8ee6"'       # color5
@@ -48,7 +51,10 @@ test_missing_colors_toml_exits_nonzero() {
 test_missing_colour_key_warns_and_never_emits_bare_hash() {
   local root="$TMPDIR_TEST/b5" partial="$TMPDIR_TEST/partial-btop"
   mkdir -p "$partial"
-  grep -v '^color1 ' "$THEME/colors.toml" > "$partial/colors.toml"
+  # color1 resolves via omamac_alias to `red`; stripping `red` (not a
+  # literal `color1` line, which doesn't exist upstream) is what makes it
+  # missing. The trailing space excludes `bright_red`.
+  grep -v '^red ' "$THEME/colors.toml" > "$partial/colors.toml"
   local err; err=$("$OMAMAC_ROOT/render/btop" "$partial" "$root" 2>&1)
   assert_contains "$err" "missing colour 'color1'"
   case "$(cat "$root/btop/themes/omamac.theme")" in

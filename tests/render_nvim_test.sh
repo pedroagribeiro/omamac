@@ -26,16 +26,19 @@ test_writes_colorscheme_with_palette_colors() {
   assert_contains "$out" 'bg = "#1a1b26"'
   assert_contains "$out" 'fg = "#a9b1d6"'
   assert_contains "$out" 'cursor = "#c0caf5"'
-  assert_contains "$out" 'sel_bg = "#7aa2f7"'
-  assert_contains "$out" 'sel_fg = "#c0caf5"'
-  assert_contains "$out" 'black = "#32344a"'
+  # selection_background/selection_foreground alias to selection/foreground;
+  # color0/color8 alias to muted — tokyo-night's real colors.toml has none
+  # of these keys literally.
+  assert_contains "$out" 'sel_bg = "#292e42"'
+  assert_contains "$out" 'sel_fg = "#a9b1d6"'
+  assert_contains "$out" 'black = "#414868"'
   assert_contains "$out" 'red = "#f7768e"'
   assert_contains "$out" 'green = "#9ece6a"'
   assert_contains "$out" 'yellow = "#e0af68"'
   assert_contains "$out" 'blue = "#7aa2f7"'
   assert_contains "$out" 'magenta = "#ad8ee6"'
   assert_contains "$out" 'cyan = "#449dab"'
-  assert_contains "$out" 'grey = "#444b6a"'
+  assert_contains "$out" 'grey = "#414868"'
   assert_contains "$out" "Normal"
   assert_contains "$out" "termguicolors"
 }
@@ -51,7 +54,10 @@ test_is_valid_lua() {
   fi
 }
 
-test_sets_background_option_from_luminance() {
+test_sets_background_option_for_light_theme() {
+  # catppuccin-latte's colors.toml has an explicit `mode = "light"` key now,
+  # so this exercises omamac_is_light's mode path, not luminance directly —
+  # the luminance fallback is covered separately in tests/colors_test.sh.
   export OMAMAC_NVIM="true"
   "$OMAMAC_ROOT/render/nvim" "$OMAMAC_ROOT/tests/fixtures/light" "$OMAMAC_STATE"
   assert_contains "$(cat "$OMAMAC_STATE/current/omamac.lua")" 'vim.o.background = "light"'
@@ -68,7 +74,10 @@ test_missing_colour_key_warns_and_never_emits_bare_hash() {
   export OMAMAC_NVIM="true"
   local partial="$TMPDIR_TEST/partial"
   mkdir -p "$partial"
-  grep -v '^color1 ' "$OMAMAC_ROOT/tests/fixtures/dark/colors.toml" > "$partial/colors.toml"
+  # color1 has no literal key of its own — it resolves via omamac_alias to
+  # `red`, so stripping THAT line is what makes it missing. The trailing
+  # space keeps this from also matching `bright_red`.
+  grep -v '^red ' "$OMAMAC_ROOT/tests/fixtures/dark/colors.toml" > "$partial/colors.toml"
   local err; err=$("$OMAMAC_ROOT/render/nvim" "$partial" "$OMAMAC_STATE" 2>&1)
   assert_contains "$err" "missing colour 'color1'"
   # `red = "#"` is VALID Lua, so a parse check cannot catch this — assert the
