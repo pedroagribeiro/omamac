@@ -2,22 +2,6 @@
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
-# Parse the file with whatever Lua front-end exists. `loadfile` only PARSES —
-# it never executes the colorscheme — and `cq` is what turns a parse failure into
-# a real exit code (plain `-c q` exits 0 even after the error prints). Returns
-# 127 when no parser exists at all, which the test treats as a failure rather
-# than a skip: a generated file nothing ever parses is the gap this guards.
-lua_parse_check() {
-  if command -v luac >/dev/null 2>&1; then luac -p "$1"; return $?; fi
-  if command -v luajit >/dev/null 2>&1; then luajit -bl "$1" >/dev/null; return $?; fi
-  if command -v lua >/dev/null 2>&1; then lua -e "assert(loadfile('$1'))"; return $?; fi
-  if command -v nvim >/dev/null 2>&1; then
-    nvim --headless -c "lua if not loadfile('$1') then vim.cmd('cq') end" -c q >/dev/null 2>&1
-    return $?
-  fi
-  return 127
-}
-
 test_writes_colorscheme_with_palette_colors() {
   export OMAMAC_NVIM="true"
   "$OMAMAC_ROOT/render/nvim" "$OMAMAC_ROOT/tests/fixtures/dark" "$OMAMAC_STATE"
