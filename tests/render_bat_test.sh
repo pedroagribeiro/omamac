@@ -3,6 +3,19 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 THEME="$OMAMAC_ROOT/tests/fixtures/dark"
 
+# Extract the foreground actually bound to a named scope. A bare
+# `assert_contains "<string>#9ece6a</string>"` proves only that the colour appears
+# SOMEWHERE — swapping two scopes' colours leaves every such assertion green, and a
+# scope whose colour coincides with another key's is satisfied vacuously.
+scope_colour() { # <file> <scope-name>
+  awk -v n="$2" '
+    $0 ~ "<string>" n "</string>" { found = 1 }
+    found && /<key>foreground<\/key>/ {
+      match($0, /#[0-9a-f]{6}/); print substr($0, RSTART, RLENGTH); exit
+    }
+  ' "$1"
+}
+
 test_writes_tmtheme_with_colors() {
   local root="$TMPDIR_TEST/t1"
   export OMAMAC_BAT="true"
@@ -61,6 +74,23 @@ test_missing_colour_key_warns_and_stays_valid_plist() {
   # fallback landed, then confirm the document is still well-formed.
   assert_contains "$(cat "$root/bat/themes/omamac.tmTheme")" "#000000"
   plutil -lint "$root/bat/themes/omamac.tmTheme" >/dev/null || fail "invalid plist"
+}
+
+test_each_scope_binds_its_own_colour() {
+  local root="$TMPDIR_TEST/t6"
+  export OMAMAC_BAT="true"
+  "$OMAMAC_ROOT/render/bat" "$THEME" "$root"
+  local f="$root/bat/themes/omamac.tmTheme"
+  assert_eq "#444b6a" "$(scope_colour "$f" Comment)"   # color8
+  assert_eq "#9ece6a" "$(scope_colour "$f" String)"    # color2
+  assert_eq "#ad8ee6" "$(scope_colour "$f" Number)"    # color5
+  assert_eq "#449dab" "$(scope_colour "$f" Constant)"  # color6
+  assert_eq "#ad8ee6" "$(scope_colour "$f" Keyword)"   # color5
+  assert_eq "#ad8ee6" "$(scope_colour "$f" Storage)"   # color5
+  assert_eq "#e0af68" "$(scope_colour "$f" Type)"      # color3
+  assert_eq "#7aa2f7" "$(scope_colour "$f" Function)"  # color4
+  assert_eq "#a9b1d6" "$(scope_colour "$f" Variable)"  # foreground
+  assert_eq "#f7768e" "$(scope_colour "$f" Invalid)"   # color1
 }
 
 run_tests
