@@ -4,11 +4,41 @@ set -uo pipefail
 OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "${OMAMAC_DIR}/lib/log.sh"
 source "${OMAMAC_DIR}/lib/state.sh"
-FCLIST="${OMAMAC_FCLIST:-fc-list}"
+GHOSTTY="${OMAMAC_GHOSTTY:-/Applications/Ghostty.app/Contents/MacOS/ghostty}"
+
+# Font source resolution, in priority order:
+#   1. OMAMAC_FCLIST, if the caller EXPLICITLY set it (tests stub this; the
+#      `${OMAMAC_FCLIST+x}` check, not `:-`, is what lets an explicit empty/odd
+#      value still win over auto-detection below).
+#   2. Ghostty's own `+list-fonts`, when a Ghostty binary is available and
+#      executable. On Darwin this is what's actually reliable: `fc-list`
+#      requires a working fontconfig, which `fonts.fontconfig.enable` in
+#      home-manager does not provide on macOS (no `~/.config/fontconfig/`,
+#      no default config file, so Nix's fc-list errors out with zero families).
+#      Ghostty needs no fontconfig and is exactly the set of fonts Ghostty
+#      itself will accept.
+#   3. Plain `fc-list`, for Linux or a machine where fontconfig genuinely works.
+font_list_raw() {
+  if [ "${OMAMAC_FCLIST+x}" = "x" ]; then
+    "$OMAMAC_FCLIST" :spacing=100 -f "%{family[0]}\n" 2>/dev/null
+  elif [ -x "$GHOSTTY" ]; then
+    # `+list-fonts` prints a family name on an unindented line, followed by
+    # its style names on indented lines, with blank lines between families.
+    # Keeping only unindented, non-empty lines yields just the family names —
+    # taking indented lines too would offer unselectable style names as fonts.
+    "$GHOSTTY" +list-fonts 2>/dev/null | grep -E '^[^[:space:]]'
+  else
+    fc-list :spacing=100 -f "%{family[0]}\n" 2>/dev/null
+  fi
+}
 
 font_list() {
-  "$FCLIST" :spacing=100 -f "%{family[0]}\n" 2>/dev/null \
-    | grep -v -i -E 'emoji|signwriting' | grep -v -E '^\.' | sort -u
+  # `|| true`: under `pipefail`, grep exits 1 when it emits no lines — which
+  # happens legitimately whenever no font source is available. That must
+  # stay a clean, empty result, not a failure that trips the script's exit
+  # code (there's no `set -e`, but the case statement below returns
+  # font_list's own status as the script's exit status).
+  font_list_raw | grep -v -i -E 'emoji|signwriting' | grep -v -E '^\.' | sort -u || true
 }
 
 font_set() {
