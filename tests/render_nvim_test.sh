@@ -2,12 +2,40 @@
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
+# Parse the file with whatever Lua front-end exists. `loadfile` only PARSES —
+# it never executes the colorscheme — and `cq` is what turns a parse failure into
+# a real exit code (plain `-c q` exits 0 even after the error prints). Returns
+# 127 when no parser exists at all, which the test treats as a failure rather
+# than a skip: a generated file nothing ever parses is the gap this guards.
+lua_parse_check() {
+  if command -v luac >/dev/null 2>&1; then luac -p "$1"; return $?; fi
+  if command -v luajit >/dev/null 2>&1; then luajit -bl "$1" >/dev/null; return $?; fi
+  if command -v lua >/dev/null 2>&1; then lua -e "assert(loadfile('$1'))"; return $?; fi
+  if command -v nvim >/dev/null 2>&1; then
+    nvim --headless -c "lua if not loadfile('$1') then vim.cmd('cq') end" -c q >/dev/null 2>&1
+    return $?
+  fi
+  return 127
+}
+
 test_writes_colorscheme_with_palette_colors() {
   export OMAMAC_NVIM="true"
   "$OMAMAC_ROOT/render/nvim" "$OMAMAC_ROOT/tests/fixtures/dark" "$OMAMAC_STATE"
   local out; out=$(cat "$OMAMAC_STATE/current/omamac.lua")
   assert_contains "$out" 'vim.g.colors_name = "omamac"'
-  assert_contains "$out" "#1a1b26"
+  assert_contains "$out" 'bg = "#1a1b26"'
+  assert_contains "$out" 'fg = "#a9b1d6"'
+  assert_contains "$out" 'cursor = "#c0caf5"'
+  assert_contains "$out" 'sel_bg = "#7aa2f7"'
+  assert_contains "$out" 'sel_fg = "#c0caf5"'
+  assert_contains "$out" 'black = "#32344a"'
+  assert_contains "$out" 'red = "#f7768e"'
+  assert_contains "$out" 'green = "#9ece6a"'
+  assert_contains "$out" 'yellow = "#e0af68"'
+  assert_contains "$out" 'blue = "#7aa2f7"'
+  assert_contains "$out" 'magenta = "#ad8ee6"'
+  assert_contains "$out" 'cyan = "#449dab"'
+  assert_contains "$out" 'grey = "#444b6a"'
   assert_contains "$out" "Normal"
   assert_contains "$out" "termguicolors"
 }
@@ -15,8 +43,11 @@ test_writes_colorscheme_with_palette_colors() {
 test_is_valid_lua() {
   export OMAMAC_NVIM="true"
   "$OMAMAC_ROOT/render/nvim" "$OMAMAC_ROOT/tests/fixtures/dark" "$OMAMAC_STATE"
-  if command -v luac >/dev/null 2>&1; then
-    luac -p "$OMAMAC_STATE/current/omamac.lua" || fail "generated lua does not parse"
+  local rc; lua_parse_check "$OMAMAC_STATE/current/omamac.lua"; rc=$?
+  if [ "$rc" -eq 127 ]; then
+    fail "no Lua parser available (luac/luajit/lua/nvim) — cannot verify the generated Lua"
+  else
+    assert_eq 0 "$rc" "generated lua must parse"
   fi
 }
 
@@ -31,6 +62,21 @@ test_missing_colors_toml_exits_nonzero() {
   mkdir -p "$TMPDIR_TEST/empty"
   local rc; "$OMAMAC_ROOT/render/nvim" "$TMPDIR_TEST/empty" "$OMAMAC_STATE" >/dev/null 2>&1; rc=$?
   assert_eq 1 "$rc" "a theme dir with no colors.toml must signal failure"
+}
+
+test_missing_colour_key_warns_and_never_emits_bare_hash() {
+  export OMAMAC_NVIM="true"
+  local partial="$TMPDIR_TEST/partial"
+  mkdir -p "$partial"
+  grep -v '^color1 ' "$OMAMAC_ROOT/tests/fixtures/dark/colors.toml" > "$partial/colors.toml"
+  local err; err=$("$OMAMAC_ROOT/render/nvim" "$partial" "$OMAMAC_STATE" 2>&1)
+  assert_contains "$err" "missing colour 'color1'"
+  # `red = "#"` is VALID Lua, so a parse check cannot catch this — assert the
+  # fallback value explicitly.
+  assert_contains "$(cat "$OMAMAC_STATE/current/omamac.lua")" 'red = "#000000"'
+  case "$(cat "$OMAMAC_STATE/current/omamac.lua")" in
+    *'"#"'*) fail "emitted a bare '#' for the missing colour" ;;
+  esac
 }
 
 run_tests
