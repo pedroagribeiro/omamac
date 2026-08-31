@@ -18,7 +18,6 @@ EOF
   mkdir -p "$OMAMAC_CACHE/backgrounds/tokyo-night"
   : > "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg"
   : > "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg"
-  omamac_state_set() { :; }
   printf 'tokyo-night\n' > "$OMAMAC_STATE/theme.name"
 }
 
@@ -70,6 +69,11 @@ test_unknown_wallpaper_exits_1() {
 # file:// fixture tree, so even the download leg never touches the network;
 # curl itself is never stubbed, it just never leaves the filesystem.
 setup_bg_fetch() {
+  # Every test sharing this suite's shell runs in the SAME process (no
+  # subshell — see helpers.sh's run_tests), so an `export` in one test would
+  # otherwise leak into the next. Reset OMAMAC_FETCH here so a stub set by
+  # one test (e.g. the broken-fetch stub below) can never bleed into another.
+  unset OMAMAC_FETCH
   export OMAMAC_THEMES_DIR="$TMPDIR_TEST/themes"
   mkdir -p "$OMAMAC_THEMES_DIR/tokyo-night"
   cp "$OMAMAC_ROOT/tests/fixtures/dark/colors.toml" "$OMAMAC_THEMES_DIR/tokyo-night/"
@@ -90,12 +94,18 @@ test_list_fetches_upstream_when_cache_is_empty() {
   assert_eq "hello-beta" "$(cat "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg")"
 }
 
-test_list_does_not_refetch_a_populated_cache() {
+test_list_does_not_redownload_an_already_cached_file() {
   setup_bg_fetch
+  # Both index entries are already cached with content that differs from the
+  # fixture's — if bg_fetch re-fetched them anyway, this content would be
+  # clobbered with the fixture's "hello-alpha"/"hello-beta".
   mkdir -p "$OMAMAC_CACHE/backgrounds/tokyo-night"
-  printf 'already-here' > "$OMAMAC_CACHE/backgrounds/tokyo-night/only.jpg"
-  assert_eq "only.jpg" "$("$OMAMAC_BIN" bg --list)"
-  assert_eq "already-here" "$(cat "$OMAMAC_CACHE/backgrounds/tokyo-night/only.jpg")"
+  printf 'already-here-alpha' > "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg"
+  printf 'already-here-beta' > "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg"
+  assert_eq "1-alpha.jpg
+2-beta.jpg" "$("$OMAMAC_BIN" bg --list)"
+  assert_eq "already-here-alpha" "$(cat "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg")"
+  assert_eq "already-here-beta" "$(cat "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg")"
 }
 
 test_list_with_no_backgrounds_index_warns_and_succeeds() {
@@ -106,6 +116,73 @@ test_list_with_no_backgrounds_index_warns_and_succeeds() {
   assert_eq 0 "$rc" "a missing backgrounds.index must not fail the command"
   assert_eq "" "$("$OMAMAC_BIN" bg --list 2>/dev/null)"
   assert_contains "$out" "no backgrounds.index"
+}
+
+# An interrupted fetch (Ctrl-C, dropped network, a closed laptop lid) must not
+# permanently strand the cache. bg_fetch has to decide per FILE, not per
+# directory: a non-empty cache with only 1 of 2 index entries present must
+# still fetch the missing one. Pre-fixture-check: this test is RED against the
+# prior `[ -z "$(ls -A "$dir")" ] || return 0` directory-level guard, because
+# that guard sees the non-empty directory and returns immediately, so
+# 2-beta.jpg never arrives — that is the whole point of the fix.
+test_fetch_resumes_a_partial_cache() {
+  setup_bg_fetch
+  mkdir -p "$OMAMAC_CACHE/backgrounds/tokyo-night"
+  printf 'already-here-alpha' > "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg"
+  assert_eq "1-alpha.jpg
+2-beta.jpg" "$("$OMAMAC_BIN" bg --list)"
+  # The pre-existing file must survive untouched...
+  assert_eq "already-here-alpha" "$(cat "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg")"
+  # ...while the missing one is the one that gets fetched.
+  assert_eq "hello-beta" "$(cat "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg")"
+}
+
+test_failed_download_leaves_no_stub() {
+  setup_bg_fetch
+  export OMAMAC_OMARCHY_RAW="file://$OMAMAC_ROOT/tests/fixtures/does-not-exist"
+  local out rc
+  out=$("$OMAMAC_BIN" bg --list 2>&1); rc=$?
+  assert_eq 0 "$rc" "a failed per-file download must not fail the command"
+  assert_eq "no" "$([ -f "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg" ] && echo yes || echo no)"
+  assert_eq "no" "$([ -f "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg" ] && echo yes || echo no)"
+  assert_contains "$out" "could not fetch"
+}
+
+# The test above (a missing file:// source) never leaves a stub in the first
+# place, because curl's local file:// reader fails before it opens -o's
+# destination for writing — so it cannot, on its own, prove the `rm -f`
+# cleanup line in bg_fetch actually does anything. Verified empirically:
+#   curl -fsSL -o dest.jpg file:///no/such/path   # dest.jpg is never created
+# The bug the `rm -f` guards against is real for plain HTTP curl, though:
+# `curl -f -o file url` is documented to sometimes create an empty/partial
+# `file` before it has read enough of the response to know the request
+# failed. A stub $OMAMAC_FETCH reproduces exactly that shape locally (no
+# network involved) so the cleanup line has a test that would actually go red
+# if it were deleted.
+test_failed_download_via_stub_fetch_leaves_no_stub_file() {
+  setup_bg_fetch
+  cat > "$TMPDIR_TEST/broken-fetch" <<'FETCHEOF'
+#!/usr/bin/env bash
+# Simulates a curl that creates its -o destination before discovering the
+# request failed (the documented curl -f -o behavior on an HTTP error).
+dest=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) dest="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$dest" ] && printf 'partial' > "$dest"
+exit 1
+FETCHEOF
+  chmod +x "$TMPDIR_TEST/broken-fetch"
+  export OMAMAC_FETCH="$TMPDIR_TEST/broken-fetch"
+  local out rc
+  out=$("$OMAMAC_BIN" bg --list 2>&1); rc=$?
+  assert_eq 0 "$rc" "a failed per-file download must not fail the command"
+  assert_eq "no" "$([ -f "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg" ] && echo yes || echo no)" \
+    "a stub left by a failed download must be cleaned up, or it is cached forever"
+  assert_contains "$out" "could not fetch"
 }
 
 run_tests

@@ -23,15 +23,25 @@ bg_fetch() {
   local theme dir names n
   theme=$(current_theme); [ -n "$theme" ] || return 0
   dir=$(bg_dir)
-  [ -z "$(ls -A "$dir" 2>/dev/null)" ] || return 0
+  # Created up front (not only once we know there's something to fetch): bg_list
+  # pipes `ls "$dir"` into `sort` under `pipefail`, so a still-missing directory
+  # would make an empty/no-index result exit non-zero instead of just being empty.
   mkdir -p "$dir"
   names=$(cat "${THEMES_DIR}/${theme}/backgrounds.index" 2>/dev/null)
   [ -n "$names" ] || { log_warn "no backgrounds.index for ${theme}"; return 0; }
+  # Fetch per missing FILE, not "is the directory non-empty". A fetch interrupted
+  # halfway would otherwise leave the cache permanently short: every later call
+  # sees a non-empty dir and skips, so the missing wallpapers never arrive.
   while IFS= read -r n; do
     [ -n "$n" ] || continue
+    [ -f "${dir}/${n}" ] && continue
     # shellcheck disable=SC2086 # OMAMAC_FETCH is a command + flags, word-split on purpose.
-    $OMAMAC_FETCH -o "${dir}/${n}" "${OMARCHY_RAW}/${OMAMAC_OMARCHY_REV}/themes/${theme}/backgrounds/${n}" 2>/dev/null \
-      || log_warn "could not fetch ${n}"
+    if ! $OMAMAC_FETCH -o "${dir}/${n}" "${OMARCHY_RAW}/${OMAMAC_OMARCHY_REV}/themes/${theme}/backgrounds/${n}" 2>/dev/null; then
+      # curl -o creates the output file before it knows the request failed;
+      # drop it, or the [ -f ] check above would treat it as cached forever.
+      rm -f "${dir}/${n}"
+      log_warn "could not fetch ${n}"
+    fi
   done <<< "$names"
 }
 
