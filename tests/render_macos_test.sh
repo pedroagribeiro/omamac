@@ -25,4 +25,12 @@ test_light_theme_sets_dark_mode_false() {
   assert_contains "$(cat "$OSA_LOG")" "set dark mode to false"
 }
 
+test_missing_colors_toml_exits_nonzero() {
+  stub_osascript
+  mkdir -p "$TMPDIR_TEST/empty"
+  local rc; "$OMAMAC_ROOT/render/macos" "$TMPDIR_TEST/empty" >/dev/null 2>&1; rc=$?
+  assert_eq 1 "$rc" "a theme dir with no colors.toml must signal failure"
+  assert_eq "" "$(cat "$OSA_LOG")" "must not touch the appearance when the theme is unreadable"
+}
+
 run_tests

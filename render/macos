@@ -2,9 +2,14 @@
 # render/macos <theme-dir> — match the system appearance to the theme.
 set -uo pipefail
 _here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "${_here}/lib/log.sh"
 source "${_here}/lib/colors.sh"
 OSASCRIPT="${OMAMAC_OSASCRIPT:-osascript}"
 
-toml="$1/colors.toml"
+theme_dir="$1"; toml="${theme_dir}/colors.toml"
+# Without this, a missing colors.toml makes omamac_is_light return "not light"
+# and the renderer silently claims dark — the caller's `|| log_warn` guard would
+# never fire. Signal failure and let theme_set downgrade it to a warning.
+[ -f "$toml" ] || { log_error "no colors.toml in ${theme_dir}"; exit 1; }
 if omamac_is_light "$toml"; then dark=false; else dark=true; fi
 "$OSASCRIPT" -e "tell application \"System Events\" to tell appearance preferences to set dark mode to ${dark}"
