@@ -11,15 +11,27 @@ toml="${theme_dir}/colors.toml"
 
 mkdir -p "${root}/ghostty/themes"
 
+# Print '#rrggbb' for a colour key. A theme missing the key must never produce a
+# malformed line like `#` — warn and fall back, so the target's parser still
+# reads valid syntax.
+c() {
+  local v; v=$(omamac_color "$toml" "$1")
+  if [ -z "$v" ]; then
+    log_warn "theme $(basename "$theme_dir") is missing colour '$1'; using 000000"
+    v="000000"
+  fi
+  printf '#%s' "$v"
+}
+
 {
   for i in $(seq 0 15); do
-    printf 'palette = %d=#%s\n' "$i" "$(omamac_color "$toml" "color$i")"
+    printf 'palette = %d=%s\n' "$i" "$(c "color$i")"
   done
-  printf 'background = #%s\n'           "$(omamac_color "$toml" background)"
-  printf 'foreground = #%s\n'           "$(omamac_color "$toml" foreground)"
-  printf 'cursor-color = #%s\n'         "$(omamac_color "$toml" cursor)"
-  printf 'selection-background = #%s\n' "$(omamac_color "$toml" selection_background)"
-  printf 'selection-foreground = #%s\n' "$(omamac_color "$toml" selection_foreground)"
+  printf 'background = %s\n'           "$(c background)"
+  printf 'foreground = %s\n'           "$(c foreground)"
+  printf 'cursor-color = %s\n'         "$(c cursor)"
+  printf 'selection-background = %s\n' "$(c selection_background)"
+  printf 'selection-foreground = %s\n' "$(c selection_foreground)"
 } > "${root}/ghostty/themes/omamac"
 
 {
