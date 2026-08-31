@@ -8,9 +8,19 @@ test_writes_tmtheme_with_colors() {
   export OMAMAC_BAT="true"
   "$OMAMAC_ROOT/render/bat" "$THEME" "$root"
   local out; out=$(cat "$root/bat/themes/omamac.tmTheme")
-  assert_contains "$out" "#1a1b26"
-  assert_contains "$out" "<key>name</key>"
-  assert_contains "$out" "omamac"
+  # One assertion per distinct source colour key the renderer consumes (11 of
+  # them), not per emitted line. Sampling would let a mutant that swaps colors pass.
+  assert_contains "$out" '<key>background</key><string>#1a1b26</string>'    # background
+  assert_contains "$out" '<key>foreground</key><string>#a9b1d6</string>'    # foreground
+  assert_contains "$out" '<key>caret</key><string>#c0caf5</string>'         # cursor
+  assert_contains "$out" '<key>selection</key><string>#7aa2f7</string>'     # selection_background
+  assert_contains "$out" '<string>#444b6a</string>'                         # color8
+  assert_contains "$out" '<string>#9ece6a</string>'                         # color2
+  assert_contains "$out" '<string>#ad8ee6</string>'                         # color5
+  assert_contains "$out" '<string>#449dab</string>'                         # color6
+  assert_contains "$out" '<string>#e0af68</string>'                         # color3
+  assert_contains "$out" '<string>#7aa2f7</string>'                         # color4
+  assert_contains "$out" '<string>#f7768e</string>'                         # color1
 }
 
 test_tmtheme_is_valid_plist() {
