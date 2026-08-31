@@ -7,8 +7,20 @@ test_writes_theme_file() {
   local root="$TMPDIR_TEST/b1"
   "$OMAMAC_ROOT/render/btop" "$THEME" "$root"
   local out; out=$(cat "$root/btop/themes/omamac.theme")
-  assert_contains "$out" 'theme[main_bg]="#1a1b26"'
-  assert_contains "$out" 'theme[main_fg]="#a9b1d6"'
+  # One assertion per DISTINCT source colour key the renderer consumes (11 of
+  # them), not per emitted line. Sampling two would let a mutant that swaps
+  # color2/color5 or drops selection_* pass unnoticed.
+  assert_contains "$out" 'theme[main_bg]="#1a1b26"'       # background
+  assert_contains "$out" 'theme[main_fg]="#a9b1d6"'       # foreground
+  assert_contains "$out" 'theme[hi_fg]="#7aa2f7"'         # color4
+  assert_contains "$out" 'theme[selected_bg]="#7aa2f7"'   # selection_background
+  assert_contains "$out" 'theme[selected_fg]="#c0caf5"'   # selection_foreground
+  assert_contains "$out" 'theme[inactive_fg]="#444b6a"'   # color8
+  assert_contains "$out" 'theme[proc_misc]="#449dab"'     # color6
+  assert_contains "$out" 'theme[mem_box]="#9ece6a"'       # color2
+  assert_contains "$out" 'theme[net_box]="#ad8ee6"'       # color5
+  assert_contains "$out" 'theme[proc_box]="#e0af68"'      # color3
+  assert_contains "$out" 'theme[temp_end]="#f7768e"'      # color1
 }
 
 test_creates_conf_when_absent() {
