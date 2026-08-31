@@ -33,7 +33,10 @@ run_tests() {
   for fn in $(declare -F | awk '{print $3}' | grep '^test_'); do
     printf '  %s\n' "$fn"
     setup_tmp_home
-    (set +e; "$fn")
+    # NOT `(set +e; "$fn")` — a subshell discards fail()'s FAILURES increment,
+    # which makes the exit-code gate below always pass. `set -e` is never
+    # enabled here, so a failing test cannot abort the loop anyway.
+    "$fn"
     rm -rf "$TMPDIR_TEST"
   done
   [ "$FAILURES" -eq 0 ] || exit 1
