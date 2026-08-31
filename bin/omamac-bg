@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# omamac-bg [file|--list|--current|--next]
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+OSASCRIPT="${OMAMAC_OSASCRIPT:-osascript}"
+OMAMAC_FETCH="${OMAMAC_FETCH:-curl -fsSL}"
+OMARCHY_RAW="${OMAMAC_OMARCHY_RAW:-https://raw.githubusercontent.com/omacom/omarchy}"
+
+current_theme() { omamac_state_get theme.name; }
+bg_dir() { printf '%s/backgrounds/%s\n' "$OMAMAC_CACHE" "$(current_theme)"; }
+
+# Populate the cache for a theme from upstream on first use. Listing goes
+# through an "index" manifest fetched from the same overridable raw base as
+# the downloads (rather than a separate hardcoded GitHub API host), so the
+# whole fetch path — listing and downloading — can be pointed at a local
+# file:// fixture tree in tests, with no network and nothing to stub.
+bg_fetch() {
+  local theme dir manifest n
+  theme=$(current_theme); [ -n "$theme" ] || return 0
+  dir=$(bg_dir)
+  [ -z "$(ls -A "$dir" 2>/dev/null)" ] || return 0
+  mkdir -p "$dir"
+  manifest=$($OMAMAC_FETCH "${OMARCHY_RAW}/master/themes/${theme}/backgrounds/index" 2>/dev/null)
+  [ -n "$manifest" ] || { log_warn "no backgrounds upstream for ${theme}"; return 0; }
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    $OMAMAC_FETCH -o "${dir}/${n}" "${OMARCHY_RAW}/master/themes/${theme}/backgrounds/${n}" 2>/dev/null \
+      || log_warn "could not fetch ${n}"
+  done <<< "$manifest"
+}
+
+bg_list() { bg_fetch; ls -1 "$(bg_dir)" 2>/dev/null | sort; }
+
+set_desktop() {
+  # macOS keeps a wallpaper per Space; `every desktop` reaches existing Spaces.
+  "$OSASCRIPT" -e "tell application \"System Events\" to tell every desktop to set picture to \"$1\"" 2>/dev/null || true
+}
+
+bg_set() {
+  local wp="$1" file
+  file="$(bg_dir)/${wp}"
+  [ -f "$file" ] || { log_error "wallpaper not found: ${wp}"; return 1; }
+  set_desktop "$file"
+  omamac_state_set background "$file"
+  log_info "Wallpaper set to ${wp}."
+}
+
+bg_next() {
+  local list cur idx next
+  list=$(bg_list); [ -n "$list" ] || { log_warn "no wallpapers cached"; return 0; }
+  cur=$(basename "$(omamac_state_get background)" 2>/dev/null)
+  idx=$(printf '%s\n' "$list" | grep -nxF "$cur" | cut -d: -f1)
+  if [ -z "$idx" ] || [ "$idx" -ge "$(printf '%s\n' "$list" | wc -l | tr -d ' ')" ]; then
+    next=$(printf '%s\n' "$list" | head -1)
+  else
+    next=$(printf '%s\n' "$list" | sed -n "$((idx + 1))p")
+  fi
+  bg_set "$next"
+}
+
+case "${1:-}" in
+  --list)    bg_list ;;
+  --current) omamac_state_get background ;;
+  --next)    bg_next ;;
+  "")        omamac_state_get background ;;
+  *)         bg_set "$1" ;;
+esac
