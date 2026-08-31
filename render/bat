@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# render/bat <theme-dir> <config-root>
+set -uo pipefail
+_here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "${_here}/lib/log.sh"
+source "${_here}/lib/colors.sh"
+BAT="${OMAMAC_BAT:-bat}"
+
+theme_dir="$1"; root="$2"; toml="${theme_dir}/colors.toml"
+[ -f "$toml" ] || { log_error "no colors.toml in ${theme_dir}"; exit 1; }
+mkdir -p "${root}/bat/themes"
+# Print '#rrggbb' for a colour key. A theme missing the key must never produce a
+# malformed line like `#` — warn and fall back, so the target's parser still
+# reads valid syntax.
+c() {
+  local v; v=$(omamac_color "$toml" "$1")
+  if [ -z "$v" ]; then
+    log_warn "theme $(basename "$theme_dir") is missing colour '$1'; using 000000"
+    v="000000"
+  fi
+  printf '#%s' "$v"
+}
+
+scope() { # name scope color
+  cat <<EOF
+    <dict>
+      <key>name</key><string>$1</string>
+      <key>scope</key><string>$2</string>
+      <key>settings</key>
+      <dict><key>foreground</key><string>$3</string></dict>
+    </dict>
+EOF
+}
+
+cat > "${root}/bat/themes/omamac.tmTheme" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>name</key><string>omamac</string>
+  <key>settings</key>
+  <array>
+    <dict>
+      <key>settings</key>
+      <dict>
+        <key>background</key><string>$(c background)</string>
+        <key>foreground</key><string>$(c foreground)</string>
+        <key>caret</key><string>$(c cursor)</string>
+        <key>selection</key><string>$(c selection_background)</string>
+      </dict>
+    </dict>
+$(scope Comment comment "$(c color8)")
+$(scope String string "$(c color2)")
+$(scope Number constant.numeric "$(c color5)")
+$(scope Constant constant "$(c color6)")
+$(scope Keyword keyword "$(c color5)")
+$(scope Storage storage "$(c color5)")
+$(scope Type "entity.name.type,support.type" "$(c color3)")
+$(scope Function "entity.name.function,support.function" "$(c color4)")
+$(scope Variable variable "$(c foreground)")
+$(scope Invalid invalid "$(c color1)")
+  </array>
+  <key>uuid</key><string>6f9a1b2c-0d3e-4f5a-8b7c-9d0e1f2a3b4c</string>
+</dict>
+</plist>
+EOF
+
+"$BAT" cache --build >/dev/null 2>&1 || true

@@ -32,6 +32,7 @@ theme_set() {
   "${OMAMAC_DIR}/render/ghostty" "$dir" "$CONFIG_ROOT" "$font" || return 1
   "${OMAMAC_DIR}/render/nvim" "$dir" "$OMAMAC_STATE" || log_warn "nvim render failed"
   "${OMAMAC_DIR}/render/btop" "$dir" "$CONFIG_ROOT" || log_warn "btop render failed"
+  "${OMAMAC_DIR}/render/bat" "$dir" "$CONFIG_ROOT" || log_warn "bat render failed"
   "${OMAMAC_DIR}/render/macos" "$dir" || log_warn "could not set system appearance"
 
   omamac_state_set theme.name "$name"
