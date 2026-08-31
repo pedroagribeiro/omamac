@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# omamac — front door for the theming engine. `omamac <command> [args…]`.
+set -uo pipefail
+
+# Resolve symlinks so OMAMAC_DIR is right when invoked via a PATH symlink.
+_src="${BASH_SOURCE[0]:-$0}"
+while [ -h "$_src" ]; do
+  _dir=$(cd -P "$(dirname "$_src")" >/dev/null 2>&1 && pwd)
+  _src=$(readlink "$_src")
+  case "$_src" in /*) ;; *) _src="$_dir/$_src" ;; esac
+done
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd -P "$(dirname "$_src")/.." >/dev/null 2>&1 && pwd)}"
+export OMAMAC_DIR
+
+usage() {
+  cat >&2 <<EOF
+omamac <command> [args]
+  theme [name|--list|--current]
+  font [name|--list|--current]
+  bg [file|--next|--list|--current]
+  menu-data
+  preview <wallpaper>
+EOF
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  theme|font|bg|menu-data|preview) exec "${OMAMAC_DIR}/bin/omamac-${cmd}" "$@" ;;
+  --print-dir)   printf '%s\n' "$OMAMAC_DIR" ;;
+  ""|-h|--help)  usage; [ -z "$cmd" ] && exit 1 || exit 0 ;;
+  *)             printf 'omamac: unknown command: %s\n' "$cmd" >&2; usage; exit 1 ;;
+esac
