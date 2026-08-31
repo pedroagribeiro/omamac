@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# render/ghostty <theme-dir> <config-root> [font-family]
+set -uo pipefail
+_here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "${_here}/lib/log.sh"
+source "${_here}/lib/colors.sh"
+
+theme_dir="$1"; root="$2"; font="${3:-}"
+toml="${theme_dir}/colors.toml"
+[ -f "$toml" ] || { log_error "no colors.toml in ${theme_dir}"; exit 1; }
+
+mkdir -p "${root}/ghostty/themes"
+
+{
+  for i in $(seq 0 15); do
+    printf 'palette = %d=#%s\n' "$i" "$(omamac_color "$toml" "color$i")"
+  done
+  printf 'background = #%s\n'           "$(omamac_color "$toml" background)"
+  printf 'foreground = #%s\n'           "$(omamac_color "$toml" foreground)"
+  printf 'cursor-color = #%s\n'         "$(omamac_color "$toml" cursor)"
+  printf 'selection-background = #%s\n' "$(omamac_color "$toml" selection_background)"
+  printf 'selection-foreground = #%s\n' "$(omamac_color "$toml" selection_foreground)"
+} > "${root}/ghostty/themes/omamac"
+
+{
+  printf 'theme = omamac\n'
+  if [ -n "$font" ]; then
+    # font-family accumulates into a fallback chain in Ghostty; reset it first
+    # or the committed family stays primary.
+    printf 'font-family = ""\n'
+    printf 'font-family = "%s"\n' "$font"
+  fi
+} > "${root}/ghostty/omamac.conf"
