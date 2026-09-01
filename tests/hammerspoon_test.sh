@@ -143,4 +143,129 @@ LUA
     || fail "produced JS does not parse: $(cat "$TMPDIR_TEST/err")"
 }
 
+# Drives the REAL onMessage handler (not just previewScript in isolation) by
+# stubbing every hs.* surface it touches and dofile-ing the whole host, then
+# capturing the onMessage callback via a stubbed
+# hs.webview.usercontent.new(...):setCallback(...). hs.task.new's stub
+# invokes its callback SYNCHRONOUSLY so the async preview round-trip runs to
+# completion inside this single Lua process, with a fake webview recording
+# every evaluateJavaScript(...) call it receives.
+#
+# This is what actually catches the bug this file is named after happening
+# again: a source-text grep for `stdout ~= ""` would keep passing even if
+# someone reintroduced a silent-skip under a different guard. Only running
+# the real conditional, with an empty preview response, proves both halves
+# of the fix — the omamac: preview empty log line AND the
+# omamacSetPreview(name, "") push actually reaching the page.
+test_empty_preview_is_logged_and_still_pushed_to_the_page() {
+  local harness="$TMPDIR_TEST/empty_preview_harness.lua"
+  # Single-quoted heredoc: every backslash below must survive into the Lua
+  # file byte-for-byte (this is a JSON-escaping routine), so bash must not
+  # touch it. The host path is substituted separately via HAMMERSPOON_HOST,
+  # read with os.getenv below, rather than interpolated into the heredoc.
+  cat > "$harness" <<'LUAEOF'
+-- hs.ipc is a real Hammerspoon module; intercept require() before the host
+-- file's own require("hs.ipc") call reaches the module system.
+package.loaded["hs.ipc"] = {}
+
+local evaljs_calls = {}
+local task_stdout = ""
+
+local function stub_encode(t)
+  if type(t) ~= "table" then
+    error(string.format("incorrect type '%s' for argument 1 (expected table)", type(t)))
+  end
+  local esc = function(s)
+    s = tostring(s):gsub('\\\\', '\\\\\\\\'):gsub('"', '\\\\"')
+    return '"' .. s .. '"'
+  end
+  local keys = {}
+  for k in pairs(t) do keys[#keys + 1] = k end
+  table.sort(keys)
+  local parts = {}
+  for _, k in ipairs(keys) do
+    parts[#parts + 1] = esc(k) .. ":" .. esc(t[k])
+  end
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local fakeWebview = {}
+fakeWebview.__index = fakeWebview
+function fakeWebview:windowStyle() return self end
+function fakeWebview:allowTextEntry() return self end
+function fakeWebview:transparent() return self end
+function fakeWebview:level() return self end
+function fakeWebview:deleteOnClose() return self end
+function fakeWebview:html() return self end
+function fakeWebview:show() return self end
+function fakeWebview:bringToFront() return self end
+function fakeWebview:hswindow() return nil end
+function fakeWebview:delete() end
+function fakeWebview:evaluateJavaScript(js) table.insert(evaljs_calls, js) end
+
+local capturedCallback = nil
+
+hs = {
+  ipc = {},
+  fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
+  json = { encode = stub_encode },
+  execute = function(cmd) return "" end,
+  hotkey = { bind = function() end },
+  screen = { mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end },
+  webview = {
+    usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
+    new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
+  },
+  drawing = { windowLevels = { modalPanel = 1 } },
+  alert = { show = function() end },
+  task = {
+    new = function(path, doneCb, args)
+      return { start = function() doneCb(0, task_stdout, "") end }
+    end,
+  },
+}
+
+local hostPath = os.getenv("HAMMERSPOON_HOST")
+local ok, err = pcall(dofile, hostPath)
+if not ok then
+  error("failed to load " .. tostring(hostPath) .. " under stubs: " .. tostring(err))
+end
+
+OmamacMenu.open()
+if not capturedCallback then
+  error("openMenu() never registered a message callback via ucc:setCallback")
+end
+
+-- Simulate the exact failure this bug report is about: omamac-preview
+-- exited 0 with empty stdout (a truncated/missing/unreadable source file).
+task_stdout = ""
+capturedCallback({ body = { action = "preview", name = "1-alpha.jpg" } })
+
+print("EMPTY_PUSH_RESULT_START")
+print("evaljs_count=" .. tostring(#evaljs_calls))
+print("evaljs_payload=" .. tostring(evaljs_calls[1] or "NONE"))
+print("EMPTY_PUSH_RESULT_END")
+LUAEOF
+
+  local out rc
+  out=$(OMAMAC_DIR="$OMAMAC_ROOT" HAMMERSPOON_HOST="$HOST" lua_run "$harness" 2>&1); rc=$?
+  if [ "$rc" -eq 127 ]; then
+    fail "no executing Lua interpreter available — cannot verify the empty-preview push"
+    return
+  fi
+  assert_eq 0 "$rc" "empty-preview harness must run cleanly, got: $out"
+  [ "$rc" -eq 0 ] || return
+
+  assert_contains "$out" "omamac: preview empty for 1-alpha.jpg" \
+    "an empty preview must be logged with the wallpaper's name, not dropped silently"
+
+  local count; count=$(printf '%s\n' "$out" | sed -n 's/^evaljs_count=//p')
+  assert_eq "1" "$count" "an empty preview must still be pushed to the page exactly once"
+
+  local payload; payload=$(printf '%s\n' "$out" | sed -n 's/^evaljs_payload=//p')
+  assert_contains "$payload" "omamacSetPreview"
+  assert_contains "$payload" "1-alpha.jpg"
+  assert_contains "$payload" '"uri":""' "the empty result must be pushed through as an empty uri, not swallowed"
+}
+
 run_tests

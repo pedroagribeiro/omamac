@@ -20,7 +20,7 @@ bg_dir() { printf '%s/backgrounds/%s\n' "$OMAMAC_CACHE" "$(current_theme)"; }
 # the index at vendor time, when it already has API access. Only the per-file
 # downloads hit the network, pinned to a fixed upstream revision.
 bg_fetch() {
-  local theme dir names n
+  local theme dir names n part
   theme=$(current_theme); [ -n "$theme" ] || return 0
   dir=$(bg_dir)
   # Created up front (not only once we know there's something to fetch): bg_list
@@ -35,17 +35,34 @@ bg_fetch() {
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     [ -f "${dir}/${n}" ] && continue
+    # Fetch to a hidden temp sibling and rename into place only on success.
+    # The perf work runs an uncached fetch detached in the background, so a
+    # SECOND, concurrent caller (e.g. the menu opening while that fetch is
+    # still running) can be in bg_fetch/bg_list at the very same moment. If
+    # this wrote straight to "${dir}/${n}", that caller would see a
+    # truncated file already sitting at the real name — offered by
+    # bg --list, then failing in omamac-preview. mv within the same
+    # directory (same filesystem) is atomic, so no reader ever observes a
+    # partial file under the real name.
+    part="${dir}/.${n}.part"
+    rm -f "$part"
     # shellcheck disable=SC2086 # OMAMAC_FETCH is a command + flags, word-split on purpose.
-    if ! $OMAMAC_FETCH -o "${dir}/${n}" "${OMARCHY_RAW}/${OMAMAC_OMARCHY_REV}/themes/${theme}/backgrounds/${n}" 2>/dev/null; then
+    if $OMAMAC_FETCH -o "$part" "${OMARCHY_RAW}/${OMAMAC_OMARCHY_REV}/themes/${theme}/backgrounds/${n}" 2>/dev/null; then
+      mv -f "$part" "${dir}/${n}"
+    else
       # curl -o creates the output file before it knows the request failed;
-      # drop it, or the [ -f ] check above would treat it as cached forever.
-      rm -f "${dir}/${n}"
+      # drop it, or a stray .part would linger in the cache forever.
+      rm -f "$part"
       log_warn "could not fetch ${n}"
     fi
   done <<< "$names"
 }
 
-bg_list() { bg_fetch; ls -1 "$(bg_dir)" 2>/dev/null | sort; }
+# grep -v, not reliance on `.part`'s leading dot being hidden by plain `ls`:
+# a leftover .part file (e.g. a download killed with SIGKILL, which skips
+# the `rm -f` cleanup above entirely) must never be offered by the picker,
+# whatever exactly produced it.
+bg_list() { bg_fetch; ls -1 "$(bg_dir)" 2>/dev/null | grep -v '\.part$' | sort || true; }
 
 set_desktop() {
   # macOS keeps a wallpaper per Space; `every desktop` reaches existing Spaces.

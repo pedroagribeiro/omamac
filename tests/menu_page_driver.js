@@ -17,10 +17,18 @@
 //            handler — there is no visible input box, the header line
 //            doubles as the search display — then reports the header's
 //            text/class instead of the posted messages).
-// For every scenario but type-then-report, prints the captured
-// window.webkit.messageHandlers.omamac.postMessage calls as a JSON array on
-// stdout. type-then-report instead prints a JSON object
-// {messages, headText, headClass}.
+//            bg-empty-preview-retry-cap (root -> Background with a single
+//            item, then calls window.omamacSetPreview(name, "") twice in a
+//            row — simulating the host reporting a failed/empty preview
+//            twice — and reports the coverflow's resulting image state
+//            alongside the posted messages, to prove the bounded retry:
+//            one retry is sent, no third, and no broken <img> is ever
+//            rendered).
+// For every scenario but type-then-report and bg-empty-preview-retry-cap,
+// prints the captured window.webkit.messageHandlers.omamac.postMessage
+// calls as a JSON array on stdout. type-then-report instead prints a JSON
+// object {messages, headText, headClass}; bg-empty-preview-retry-cap prints
+// {messages, hasImg}.
 'use strict';
 const fs = require('fs');
 
@@ -148,6 +156,15 @@ switch (scenario) {
     fireKey('h');
     fireKey('e');
     break;
+  case 'bg-empty-preview-retry-cap':
+    fireKey('ArrowDown'); // root: Theme -> Font
+    fireKey('ArrowDown'); // root: Font -> Background
+    fireKey('Enter');     // enter Background — requests a preview for the only item
+    // Two empty responses in a row from the host — e.g. the wallpaper is
+    // still mid-download both times omamac-preview was asked.
+    global.window.omamacSetPreview('only.jpg', '');
+    global.window.omamacSetPreview('only.jpg', '');
+    break;
   default:
     console.error('unknown scenario: ' + scenario);
     process.exit(1);
@@ -159,6 +176,13 @@ if (scenario === 'type-then-report') {
     headText: hdrEl.textContent,
     headClass: hdrEl.className,
   }));
+} else if (scenario === 'bg-empty-preview-retry-cap') {
+  // True if any coverflow item ever got an <img class="cv-img"> appended —
+  // renderCoverflow only does that when thumbs[name] is truthy, so this is
+  // "did an empty preview ever get cached and rendered as a broken image".
+  const hasImg = cvEl.children.some((item) =>
+    (item.children || []).some((c) => c.className === 'cv-img'));
+  process.stdout.write(JSON.stringify({ messages, hasImg }));
 } else {
   process.stdout.write(JSON.stringify(messages));
 }

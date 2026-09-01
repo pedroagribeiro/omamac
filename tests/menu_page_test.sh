@@ -131,4 +131,23 @@ test_header_shows_typed_text_instead_of_placeholder() {
   assert_eq "typed" "$head_class" "header must switch to full opacity once characters are typed"
 }
 
+test_empty_preview_permits_one_retry_then_gives_up() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # A single Background item. Entering the level requests one preview
+  # (attempt 1); omamacSetPreview(name, "") called twice in a row simulates
+  # the host reporting a failed/still-downloading preview both times it
+  # asked. The bounded retry means exactly ONE more request goes out after
+  # the first empty response (attempt 2) — never a third — and the
+  # placeholder must survive throughout: no <img> is ever appended.
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":["only.jpg"]},"colors":{}}'
+  local out; out=$(run_driver "$data" "bg-empty-preview-retry-cap")
+  local previews; previews=$(printf '%s' "$out" | jq -c '[.messages[] | select(.action == "preview" and .name == "only.jpg")] | length')
+  assert_eq 2 "$previews" "an empty preview must permit exactly one retry (2 requests total), then stop"
+  local has_img; has_img=$(printf '%s' "$out" | jq -r '.hasImg')
+  assert_eq "false" "$has_img" "an empty preview must never be cached/rendered as a broken <img>; the placeholder must remain"
+}
+
 run_tests

@@ -180,6 +180,13 @@
   const requested = new Set();             // names already asked for a preview, so
                                             // render()/omamacSetPreview() re-runs
                                             // never re-send for the same name
+  const attempts = {};                     // basename -> preview requests sent so far,
+                                            // so a wallpaper whose preview keeps coming
+                                            // back empty (still downloading, or genuinely
+                                            // broken — see omamacSetPreview below) gets a
+                                            // bounded retry instead of hammering the host
+                                            // forever.
+  const MAX_PREVIEW_ATTEMPTS = 2;
   const el = { hdr: hdr, list: list, card: card, cv: cv };
 
   const visible = () => {
@@ -195,6 +202,8 @@
   // racing to write the same --out path at once.
   function requestPreview(name) {
     if (thumbs[name] || requested.has(name)) return;
+    if ((attempts[name] || 0) >= MAX_PREVIEW_ATTEMPTS) return;
+    attempts[name] = (attempts[name] || 0) + 1;
     requested.add(name);
     send({ action: "preview", name });
   }
@@ -267,8 +276,25 @@
     }
   }
 
-  // The host calls this when a thumbnail finishes generating.
-  window.omamacSetPreview = (name, uri) => { thumbs[name] = uri; render(); };
+  // The host calls this when a thumbnail finishes generating — or, per the
+  // coverflow-picker bug report, with uri === "" when omamac-preview came
+  // back empty (source still downloading, missing, or unreadable). An empty
+  // uri must NOT be cached: `thumbs[name] = ""` would make renderCoverflow's
+  // `if (thumbs[name])` check falsy anyway (so no <img src=""> ever
+  // renders), but it would also satisfy requestPreview's `thumbs[name] ||`
+  // guard as a truthy-looking "already handled" entry via `in`/hasOwnProperty
+  // semantics if that guard ever changed — so just never write it. Instead,
+  // drop `name` from `requested` so the next render() naturally asks again;
+  // requestPreview's own MAX_PREVIEW_ATTEMPTS cap is what stops this from
+  // looping forever on a wallpaper that is never coming.
+  window.omamacSetPreview = (name, uri) => {
+    if (uri) {
+      thumbs[name] = uri;
+    } else {
+      requested.delete(name);
+    }
+    render();
+  };
 
   function choose() {
     const items = visible();

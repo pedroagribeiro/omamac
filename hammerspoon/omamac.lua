@@ -66,7 +66,18 @@ local function onMessage(message)
       -- open, so it is always non-nil here and a bare `and wv` guards nothing.
       -- What can actually happen is the panel being closed (menuWV = nil) or
       -- replaced by a newly-opened one while this thumbnail was generating.
-      if stdout ~= "" and wv == menuWV then
+      if wv == menuWV then
+        -- An empty stdout means omamac-preview bailed silently (missing
+        -- source, sips failure, a wallpaper still mid-download — see
+        -- bin/omamac-bg's atomic-fetch fix). That USED to be dropped here
+        -- with no trace at all — exactly how a wallpaper stuck as a
+        -- transparent placeholder went unnoticed. Log it, and push the
+        -- empty result through to the page anyway: omamacSetPreview(name,
+        -- "") tells the page "not available yet", so it can drop the name
+        -- from its own in-flight set and retry (bounded — see menu.html).
+        if stdout == "" then
+          print(string.format("omamac: preview empty for %s", tostring(b.name)))
+        end
         -- Was a bare `pcall` with the error thrown away, which is exactly
         -- how the hs.json.encode(string) bug above went unnoticed: it threw
         -- on every single call and nothing ever surfaced that. Log on

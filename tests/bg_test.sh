@@ -185,4 +185,115 @@ FETCHEOF
   assert_contains "$out" "could not fetch"
 }
 
+# --- Atomic download: a wallpaper mid-download must never be visible under
+# its real name --- see the coverflow-picker bug report: the perf work runs
+# uncached fetches detached, so a SECOND, concurrent `bg --list` (e.g. from
+# opening the menu) can run while a fetch for the very same file is still in
+# flight. If bg_fetch writes straight to the final name, that second caller
+# sees a truncated file that IS the real name, offers it in the picker, and
+# the preview then fails on the truncated bytes.
+#
+# The stub below is a curl stand-in keyed by a per-URL mkdir lock: the first
+# invocation for a given background name "wins" the lock, writes partial
+# bytes to whatever path bg_fetch handed it via -o, signals $FETCH_MARKER,
+# and then blocks on $FETCH_RELEASE before failing — simulating a slow
+# in-flight download. Any OTHER concurrent invocation for the SAME name
+# (i.e. a second, redundant fetch attempt racing the first) loses the lock
+# and fails immediately rather than blocking, so a concurrent observer that
+# itself calls through bg_fetch can never deadlock against the first,
+# regardless of which code path (direct-to-final vs atomic-via-temp) is
+# under test.
+setup_bg_fetch_slow() {
+  setup_bg_fetch
+  # A single index entry: with two entries, the observer's own bg_fetch call
+  # (see below) would still need to attempt-and-lose the lock for the SECOND
+  # entry too, since neither invocation has cached it yet — needless noise
+  # against the one property under test here.
+  printf '1-alpha.jpg\n' > "$OMAMAC_THEMES_DIR/tokyo-night/backgrounds.index"
+  export FETCH_LOCKROOT="$TMPDIR_TEST/locks" FETCH_MARKER="$TMPDIR_TEST/fetch-started" \
+         FETCH_RELEASE="$TMPDIR_TEST/fetch-release"
+  mkdir -p "$FETCH_LOCKROOT"
+  rm -f "$FETCH_MARKER" "$FETCH_RELEASE"
+  cat > "$TMPDIR_TEST/slow-fetch" <<'FETCHEOF'
+#!/usr/bin/env bash
+set -u
+dest="" url=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) dest="$2"; shift 2 ;;
+    *) url="$1"; shift ;;
+  esac
+done
+lockdir="$FETCH_LOCKROOT/$(basename "$url")"
+if ! mkdir "$lockdir" 2>/dev/null; then
+  # Another invocation is already "downloading" this exact name — fail fast
+  # instead of blocking, so a concurrent duplicate fetch attempt can never
+  # deadlock this test.
+  exit 1
+fi
+[ -n "$dest" ] && printf 'partial-bytes' > "$dest"
+touch "$FETCH_MARKER"
+while [ ! -f "$FETCH_RELEASE" ]; do sleep 0.05; done
+exit 1
+FETCHEOF
+  chmod +x "$TMPDIR_TEST/slow-fetch"
+  export OMAMAC_FETCH="$TMPDIR_TEST/slow-fetch"
+}
+
+test_partial_download_is_never_visible_under_its_final_name_while_in_flight() {
+  setup_bg_fetch_slow
+
+  "$OMAMAC_BIN" bg --list > "$TMPDIR_TEST/list-writer.out" 2>&1 &
+  local writer_pid=$!
+
+  local waited=0
+  while [ ! -f "$FETCH_MARKER" ] && [ "$waited" -lt 100 ]; do
+    waited=$((waited + 1)); sleep 0.05
+  done
+  if [ ! -f "$FETCH_MARKER" ]; then
+    fail "fetch stub never signalled that partial bytes were written"
+    touch "$FETCH_RELEASE"; wait "$writer_pid" 2>/dev/null
+    return
+  fi
+
+  # The download is now "in flight": partial bytes are on disk somewhere,
+  # but the fetch has neither succeeded nor failed yet.
+  local final="$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg"
+  assert_eq "no" "$([ -e "$final" ] && echo yes || echo no)" \
+    "the real filename must not exist until the download actually finishes"
+  local stray; stray=$(find "$OMAMAC_CACHE/backgrounds/tokyo-night" -maxdepth 1 -name '.*part*' 2>/dev/null)
+  assert_contains "$stray" "part" "an in-flight download must be visible only under a hidden temp sibling"
+
+  # A concurrent, independent `bg --list` call — e.g. the menu opening while
+  # the detached fetch above is still running — must not offer the
+  # in-flight wallpaper either. This is the literal RED/GREEN case: on the
+  # direct-to-final code, bg_fetch's own `[ -f "${dir}/${n}" ]` check sees
+  # the writer's partial file already sitting at the real name and skips
+  # re-fetching it entirely, so it shows up in this list immediately.
+  local list_during; list_during=$("$OMAMAC_BIN" bg --list 2>/dev/null)
+  assert_eq "" "$list_during" "bg --list must not offer a wallpaper that is still downloading"
+
+  touch "$FETCH_RELEASE"
+  wait "$writer_pid" 2>/dev/null
+
+  # Once the (failed) download settles, nothing — neither the real name nor
+  # a leftover temp file — must remain.
+  assert_eq "no" "$([ -e "$final" ] && echo yes || echo no)" "a failed download must not leave the real name behind"
+  stray=$(find "$OMAMAC_CACHE/backgrounds/tokyo-night" -maxdepth 1 -name '.*part*' 2>/dev/null)
+  assert_eq "" "$stray" "a failed download must not leave a temp file behind"
+}
+
+# bg_list must ignore any leftover .part file regardless of how it got
+# there (e.g. a download killed with SIGKILL, which skips bg_fetch's own
+# `rm -f` cleanup entirely) — not just files this run's bg_fetch created and
+# cleaned up itself. This fixture deliberately does NOT use a leading dot,
+# so the assertion cannot pass merely because plain `ls -1` already hides
+# dotfiles by default — it must be bg_list's own filter doing the work.
+test_bg_list_ignores_leftover_part_files() {
+  setup_bg
+  touch "$OMAMAC_CACHE/backgrounds/tokyo-night/3-gamma.jpg.part"
+  assert_eq "1-alpha.jpg
+2-beta.jpg" "$("$OMAMAC_BIN" bg --list)"
+}
+
 run_tests
