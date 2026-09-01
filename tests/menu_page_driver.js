@@ -120,6 +120,9 @@ try {
 
 global.window = {
   OMAMAC: omamacData,
+  // Fixed so the mid-row fold is deterministic; a scenario can override it
+  // via OMAMAC_VIEWPORT_H.
+  innerHeight: Number(process.env.OMAMAC_VIEWPORT_H || 1080),
   webkit: {
     messageHandlers: {
       omamac: { postMessage(m) { messages.push(m); } },
@@ -249,6 +252,10 @@ if (scenario === 'font-open-and-report' || scenario === 'root-report') {
     cardHidden: cardEl.hidden,
     cvHidden: cvEl.hidden,
     cardWidth: cardEl.style._props['--card-w'],
+    rowH: cardEl.style._props['--row-h'],
+    rowGap: cardEl.style._props['--row-gap'],
+    nameSize: cardEl.style._props['--name-size'],
+    listMaxH: cardEl.style._props['--list-max-h'],
   }));
 } else if (scenario === 'theme-misdelivered-preview') {
   process.stdout.write(JSON.stringify({

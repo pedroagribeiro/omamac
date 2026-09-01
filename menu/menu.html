@@ -53,17 +53,30 @@
   #list {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: var(--row-gap, 3px);
     overflow-y: auto;
-    /* Not part of the spec values — needed so a long list doesn't push the
-       card off-screen; the card itself has no max-height in the source
-       values given. */
-    max-height: min(60vh, 400px);
+    /* Computed per level by render(), so the list can end MID-ROW. Omarchy has
+       no scrollbar anywhere in Menu.qml — the affordance is a clipped row
+       instead: "a clipped row is what tells the eye there is more below the
+       fold, so never come out even on a row boundary" (foldedListHeight).
+       The fallback only matters before the first render(). */
+    max-height: var(--list-max-h, 400px);
+    /* Both spellings: WebKit needs the pseudo-element, and scrollbar-width is
+       the standard property. Without these macOS still paints an overlay
+       scrollbar over the rows. */
+    scrollbar-width: none;
   }
+  #list::-webkit-scrollbar { display: none; width: 0; height: 0; }
   .row {
     display: flex;
     align-items: center;
-    height: 50px;
+    height: var(--row-h, 50px);
+    /* #list is a flex COLUMN, so without this the rows shrink to fit its
+       max-height instead of overflowing it — measured at 25px against a
+       declared 60px, which silently defeats both the row height and the
+       mid-row fold below (nothing overflows, so nothing is ever clipped).
+       flex-shrink must stay 0 for the fold to mean anything. */
+    flex: 0 0 auto;
     border-radius: var(--radius);
     cursor: default;
     color: var(--fg);
@@ -76,12 +89,12 @@
     width: 36px; flex: 0 0 36px;
     margin-left: 8px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 18px;
+    font-size: var(--icon-size, 18px);
     line-height: 1;
   }
   .name {
     flex: 1; min-width: 0;
-    font-size: 16px; font-weight: 500;
+    font-size: var(--name-size, 16px); font-weight: 500;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     padding-right: 10px;
   }
@@ -303,6 +316,43 @@
   // put the marker in the icon column, which is what a font list is.
   const CURRENT_MARK = "\u2713";
 
+  // Row metrics. The defaults are Omarchy's: baseRowHeight 50 (Menu.qml:102),
+  // rowSpacing = Style.spacing.xs = 3, and the label at Style.font.heading 16
+  // / Font.Medium. A level may override them.
+  //
+  // The Font level DOES override them, and that is a deliberate deviation from
+  // upstream rather than a port of it — Pedro asked for roomier rows and
+  // larger names on this specific list, which is 19 long family names rather
+  // than three short words. Everything else keeps upstream's numbers.
+  const ROWS = { height: 50, gap: 3, name: 16, icon: 18 };
+
+  // Omarchy renders NO scrollbar anywhere in Menu.qml. When the rows do not
+  // fit, the card is sized to end part-way through the first hidden row —
+  // `rowPeek`, 55% of a row — because "a clipped row is what tells the eye
+  // there is more below the fold, so never come out even on a row boundary"
+  // (foldedListHeight). This reproduces that: full rows, then a peeking
+  // sliver, never a clean boundary.
+  //
+  // Upstream's own budget is the panel height minus the card chrome, capped
+  // at 70% of the screen (availableRowsHeight). CARD_CHROME is this page's
+  // equivalent of that chrome: 18px padding twice, the 34px header, and the
+  // 6px gap between header and list.
+  const CARD_CHROME = 18 * 2 + 34 + 6;
+  function listMaxHeight(count, m) {
+    const step = m.height + m.gap;
+    if (count <= 0) return m.height;
+    // innerHeight is absent in the test DOM shim; 1080 is only a fallback.
+    const viewport = window.innerHeight || 1080;
+    const available = Math.round(viewport * 0.7) - CARD_CHROME;
+    const contentHeight = count * step - m.gap;
+    if (contentHeight <= available) return contentHeight;
+    // How many rows fit whole, leaving room for the peek below them.
+    const peek = Math.round(m.height * 0.55);
+    let full = Math.floor((available - peek) / step);
+    if (full < 1) full = 1;
+    return full * step + peek;
+  }
+
   // Geometry constants, ImagePicker.qml (v4.0.2). See the #cv block in
   // <style> for where each one lands.
   const EXPANDED_W = 768, SLICE_W = 108, SLICE_SPACING = -30;
@@ -337,6 +387,8 @@
       icon: (name) =>
         name === (DATA.font.current || "") ? CURRENT_MARK : ROOT_ICONS.Font,
       width: 520,
+      // Deliberate deviation — see ROWS above.
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
     bg: {
       crumb: "Background", cmd: "bg", picker: "bg", labels: false,
@@ -499,6 +551,12 @@
     el.hdr.textContent = filter ? filter : (L.crumb + "…");
     el.hdr.className = filter ? "typed" : "";
     el.card.style.setProperty("--card-w", (L.width || 300) + "px");
+    const m = L.rows || ROWS;
+    el.card.style.setProperty("--row-h", m.height + "px");
+    el.card.style.setProperty("--row-gap", m.gap + "px");
+    el.card.style.setProperty("--name-size", m.name + "px");
+    el.card.style.setProperty("--icon-size", m.icon + "px");
+    el.card.style.setProperty("--list-max-h", listMaxHeight(items.length, m) + "px");
 
     // Each branch clears the OTHER view's contents as well as filling its
     // own. Hiding a container leaves its children — and their onclick

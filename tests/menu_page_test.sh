@@ -357,4 +357,95 @@ test_font_menu_is_wider_than_the_other_card_levels() {
     "every other card level keeps the standard width"
 }
 
+# The Font list: no scrollbar, roomier rows, larger names.
+#
+# The scrollbar's absence is upstream — Menu.qml contains no ScrollBar at all.
+# What it does instead is size the list to end PART-WAY THROUGH the first
+# hidden row (rowPeek, 55% of a row): "a clipped row is what tells the eye
+# there is more below the fold, so never come out even on a row boundary"
+# (foldedListHeight).
+#
+# The row height, gap and label size on this level are NOT upstream: those are
+# 50 / 3 / 16 there (Menu.qml baseRowHeight, Style.spacing.xs,
+# Style.font.heading) and remain so on every other card level. Pedro asked for
+# more room and bigger names on the font list specifically.
+
+test_font_rows_are_roomier_and_larger_than_the_default_level() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Andale Mono","Menlo","Monaco"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local font root
+  font=$(run_driver "$data" "font-open-and-report")
+  root=$(run_driver "$data" "root-report")
+
+  assert_eq "19px" "$(printf '%s' "$font" | jq -r '.nameSize')" "font names must be larger"
+  assert_eq "60px" "$(printf '%s' "$font" | jq -r '.rowH')"     "font rows must be taller"
+  assert_eq "6px"  "$(printf '%s' "$font" | jq -r '.rowGap')"   "font rows must be further apart"
+
+  # ...and every other card level keeps Omarchy's numbers exactly.
+  assert_eq "16px" "$(printf '%s' "$root" | jq -r '.nameSize')" "root keeps Style.font.heading"
+  assert_eq "50px" "$(printf '%s' "$root" | jq -r '.rowH')"     "root keeps baseRowHeight"
+  assert_eq "3px"  "$(printf '%s' "$root" | jq -r '.rowGap')"   "root keeps Style.spacing.xs"
+}
+
+# Guarded here as source text because a DOM shim has no layout engine and
+# cannot see it: #list is a flex column, so without flex-shrink:0 the rows
+# compress to fit its max-height rather than overflowing. Measured in a real
+# WKWebView that was 25px against a declared 60px — which also silently
+# defeats the mid-row fold, since a list that never overflows is never
+# clipped. Verified live offscreen after the fix.
+test_rows_do_not_shrink_to_fit_the_list() {
+  local css; css=$(sed -n '/<style>/,/<\/style>/p' "$PAGE")
+  case "$css" in
+    *"flex: 0 0 auto"*) ;;
+    *) fail "rows must not be flex-shrinkable, or the row height and the fold both stop meaning anything" ;;
+  esac
+}
+
+test_the_list_hides_its_scrollbar() {
+  local css; css=$(sed -n '/<style>/,/<\/style>/p' "$PAGE")
+  # Both spellings are needed: WebKit paints an overlay scrollbar that only
+  # the pseudo-element suppresses, and scrollbar-width is the standard one.
+  assert_contains "$css" "#list::-webkit-scrollbar"
+  assert_contains "$css" "scrollbar-width: none"
+}
+
+test_an_overflowing_list_ends_mid_row_instead_of_scrolling() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # 40 fonts at 60+6 per row is far more than 70% of a 1080px viewport can
+  # hold, so the list must fold. Row step 66, peek round(60*0.55) = 33.
+  # available = round(1080*0.7) - (18*2 + 34 + 6) = 756 - 76 = 680.
+  # full = floor((680 - 33) / 66) = 9  ->  9*66 + 33 = 627.
+  local opts; opts=$(python3 -c "import json;print(json.dumps(['Font %02d' % i for i in range(40)]))")
+  local data; data=$(printf '{"theme":{"current":"","options":[]},"font":{"current":"Font 00","options":%s},"bg":{"current":"","options":[]},"colors":{}}' "$opts")
+  local out; out=$(OMAMAC_VIEWPORT_H=1080 run_driver "$data" "font-open-and-report")
+  local maxh; maxh=$(printf '%s' "$out" | jq -r '.listMaxH')
+  assert_eq "627px" "$maxh" "the folded height must be whole rows plus a 55% peek"
+
+  # The property that actually matters, stated independently of the arithmetic:
+  # the fold must NOT land on a row boundary, or the cut row disappears and
+  # with it the only cue that there is more below.
+  local n="${maxh%px}"
+  [ $(( (n + 6) % 66 )) -ne 0 ] || \
+    fail "the list ended exactly on a row boundary — nothing tells the eye there is more below the fold"
+}
+
+test_a_short_list_is_not_folded_at_all() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # 3 rows: 3*60 + 2*6 = 192, well inside the budget, so no peek is added and
+  # the card ends flush with the last row.
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Andale Mono","Menlo","Monaco"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(OMAMAC_VIEWPORT_H=1080 run_driver "$data" "font-open-and-report")
+  assert_eq "192px" "$(printf '%s' "$out" | jq -r '.listMaxH')" \
+    "a list that fits must end flush with its last row, with no peek"
+}
+
 run_tests
