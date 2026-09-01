@@ -4,9 +4,16 @@ A macOS theming tool that restyles Ghostty, Neovim, btop, bat, the system
 appearance and the wallpaper from a single theme definition, plus a
 Hammerspoon-hosted menu (22 real vendored Omarchy v4.0.2 themes).
 
-Press **⌘⌥Space** to open the theme menu — pick a theme, font, or wallpaper
+Press **⌘⌥O** to open the theme menu — pick a theme, font, or wallpaper
 and every configured target re-renders live. **⌘⌃Space** cycles the
 wallpaper for the current theme without opening the menu.
+
+> **Why ⌘⌥O and not ⌘⌥Space?** macOS reserves ⌥⌘Space for "Show Finder search
+> window". Disabling that preference does not release the already-running
+> registration without a re-login, so Hammerspoon's bind fails with
+> `RegisterEventHotKey failed: -9878`. ⌘⌥O is free and needs no logout. If you
+> prefer the Omarchy-faithful chord, disable the Finder shortcut, log out and
+> back in, then change the `hs.hotkey.bind` line in `hammerspoon/omamac.lua`.
 
 ## CLI
 
@@ -55,7 +62,7 @@ like every other program module in that repo: `bin/rebuild` alone does
    prompts (System Settings > Privacy & Security > Accessibility > enable
    Hammerspoon) — required on this path exactly as on the Homebrew path
    below.
-6. Press ⌘⌥Space.
+6. Press ⌘⌥O.
 
 **The flake input is a local path.** omamac has not been published anywhere,
 so `~/.dotfiles/flake.nix` currently points at it as
@@ -77,7 +84,7 @@ overwriting your file). After it runs:
 
 1. Launch Hammerspoon and grant it **Accessibility** permission when macOS
    prompts (System Settings > Privacy & Security > Accessibility).
-2. Press ⌘⌥Space.
+2. Press ⌘⌥O.
 
 ## Wiring individual tools
 

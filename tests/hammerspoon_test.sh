@@ -16,7 +16,7 @@ test_host_parses() {
 test_binds_both_hotkeys() {
   local src; src=$(cat "$HOST")
   # cmd+alt+space opens the menu; cmd+ctrl+space cycles the wallpaper.
-  assert_contains "$src" '{ "cmd", "alt" }, "space"'
+  assert_contains "$src" '{ "cmd", "alt" }, "o"'
   assert_contains "$src" '{ "cmd", "ctrl" }, "space"'
 }
 

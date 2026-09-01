@@ -94,7 +94,10 @@ local function openMenu()
   if win then win:focus() end
 end
 
-hs.hotkey.bind({ "cmd", "alt" }, "space", openMenu)
+-- cmd+alt+O, not cmd+alt+SPACE. macOS holds cmd+alt+space for "Show Finder
+-- search window"; disabling that preference does not release the running
+-- registration without a re-login, so RegisterEventHotKey fails with -9878.
+hs.hotkey.bind({ "cmd", "alt" }, "o", openMenu)
 hs.hotkey.bind({ "cmd", "ctrl" }, "space", function() runAsync({ "bg", "--next" }) end)
 
 OmamacMenu = { open = openMenu, hide = hideMenu }
