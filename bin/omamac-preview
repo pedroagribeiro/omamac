@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
-# omamac-preview <wallpaper-basename>   — data URI for one of the current
-#                                         theme's cached wallpapers
-# omamac-preview --theme <theme-name>   — data URI for a theme's preview shot
+# omamac-preview <wallpaper-basename>  — data URI for one of the current
+#                                        theme's cached wallpapers
+# omamac-preview --theme <name>        — data URI for a theme's preview shot
+# omamac-preview --paths [--theme]     — build every thumbnail for one picker
+#                                        level and print "<name><TAB><path>"
+#                                        lines, nothing else
+#
+# The Hammerspoon host only ever uses --paths; see the note above emit_paths
+# for why. The single-item data URI forms stay because they are what makes
+# this command usable and testable on its own.
 set -uo pipefail
 OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "${OMAMAC_DIR}/lib/state.sh"
@@ -9,38 +16,86 @@ source "${OMAMAC_DIR}/lib/fetch.sh"
 SIPS="${OMAMAC_SIPS:-sips}"
 THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
 
-# The menu calls this speculatively for every visible row, so every failure
-# here is a quiet no-output exit 0 — never an error.
-[ $# -ge 1 ] || exit 0
+# Omarchy generates EVERY picker thumbnail with one recipe — themes and
+# wallpapers alike, since bin/omarchy-menu-images' generate_thumbnail is a
+# single code path serving both switchers:
+#
+#   vipsthumbnail <src> --size 1536x864 --smartcrop=centre \
+#                       --path <out>[Q=82,strip]
+#
+# The numbers are not arbitrary. 1536x864 is exactly twice the 768x432 the
+# coverflow paints, so on a Retina panel the expanded item lands 1:1 on the
+# backing store. An earlier -Z 1024 here was a 1.5x UPSCALE into that same
+# space: tolerable on a wallpaper, obvious on a theme preview, which is a
+# desktop screenshot full of 10px text.
+THUMB_W=1536
+THUMB_H=864
+THUMB_Q=82
 
-# Convert <source-image> -> cached JPEG thumbnail and print it as a data URI.
-# Shared by both modes; prints nothing and returns 0 on any failure.
-emit_thumb() {
-  local src="$1" thumb="$2"
-  [ -f "$src" ] || return 0
+# Cached thumbnails carry the recipe that produced them in their filename.
+# The staleness check in build_thumb is "is the SOURCE newer than the
+# thumbnail", which says nothing about a change on this side: raising the size
+# from 1024 to 1536 left every already-cached thumbnail looking exactly as
+# valid as before, so the whole point of the change would have been served out
+# of cache forever, on precisely the machines that had used the feature
+# already. A recipe change now names a different file, which is simply a miss.
+thumb_path() { printf '%s/%s.%sx%sq%s.jpg\n' "$1" "$2" "$THUMB_W" "$THUMB_H" "$THUMB_Q"; }
+
+# Convert <source-image> -> cached JPEG thumbnail, printing the thumbnail's
+# path. Prints nothing and returns 1 on any failure, which every caller treats
+# as "no preview available" rather than an error — the menu asks for these
+# speculatively, so a failure here must never be loud.
+build_thumb() {
+  local src="$1" thumb="$2" dims w h nw nh
+  [ -f "$src" ] || return 1
   mkdir -p "$(dirname "$thumb")"
   if [ ! -f "$thumb" ] || [ "$src" -nt "$thumb" ]; then
-    # 1024, not 600: the menu's picker levels expand the selected item to
-    # 768px wide (Omarchy's coverflow expandedWidth) — 600 upscales into that
-    # and looks soft. Measured cost of the bump is negligible: ~0.05s either
-    # way against a real 4096x2428 source (see tests/preview_test.sh and the
-    # coverflow report for the numbers).
-    if ! "$SIPS" -s format jpeg -Z 1024 "$src" --out "$thumb" >/dev/null 2>&1; then
+    dims=$("$SIPS" -g pixelWidth -g pixelHeight "$src" 2>/dev/null |
+      awk '/pixelWidth:/{w=$2} /pixelHeight:/{h=$2} END{ if (w+0 > 0 && h+0 > 0) print w, h }')
+    # No usable size means sips cannot read this as an image at all, in which
+    # case the conversion below would fail too. Bail rather than guess a size
+    # and hand the menu a malformed thumbnail.
+    [ -n "$dims" ] || return 1
+    read -r w h <<EOF
+${dims}
+EOF
+    # vipsthumbnail is not on a stock Mac, so --smartcrop=centre is done here
+    # in the two halves it implies: scale so the image COVERS the box (aspect
+    # preserved, hence the max of the two ratios), then centre-crop to exactly
+    # the box. A plain `sips -Z` instead fits the image INSIDE the box and
+    # leaves its aspect untouched, which frames any non-16:9 source — that is,
+    # every wallpaper — differently from upstream.
+    read -r nw nh <<EOF
+$(awk -v w="$w" -v h="$h" -v tw="$THUMB_W" -v th="$THUMB_H" \
+    'BEGIN { s = tw / w; if (th / h > s) s = th / h;
+             printf "%d %d", int(w * s + 0.5), int(h * s + 0.5) }')
+EOF
+    # sips takes HEIGHT then WIDTH for both -z and -c, and applies operations
+    # left to right — so this one invocation is scale-then-crop.
+    if ! "$SIPS" -s format jpeg -s formatOptions "$THUMB_Q" \
+           -z "$nh" "$nw" -c "$THUMB_H" "$THUMB_W" \
+           "$src" --out "$thumb" >/dev/null 2>&1; then
       # sips creates --out before it knows the conversion failed. Drop the stub,
       # or the [ -f "$thumb" ] check above serves it forever as a malformed
       # "success" — the same trap lib/fetch.sh already guards for curl.
       rm -f "$thumb"
-      return 0
+      return 1
     fi
   fi
-  printf 'data:image/jpeg;base64,%s\n' "$(base64 -i "$thumb" | tr -d '\n')"
+  printf '%s\n' "$thumb"
 }
 
-if [ "$1" = "--theme" ]; then
-  name="${2:-}"
-  [ -n "$name" ] || exit 0
-
-  # The theme name is the ONE preview input omamac did not produce itself — it
+# Resolve (fetching once, on demand) the source image behind one theme's
+# preview, printing its path.
+#
+# Omarchy's own theme switcher (bin/omarchy-theme-switcher) builds its picker
+# from themes/<name>/preview.{png,jpg,...} — a full desktop screenshot of the
+# theme in use — falling back to the theme's first background only when no
+# preview file exists. Every stock theme at v4.0.2 ships preview.png, so that
+# is the single file fetched here.
+theme_src() {
+  local name="$1" src
+  # The theme name is the one preview input omamac did not produce itself — it
   # comes from the menu page — and it is interpolated into both an upstream URL
   # and a cache path. Two independent guards, because they answer different
   # questions: the first rejects anything that is not a bare path component
@@ -48,27 +103,91 @@ if [ "$1" = "--theme" ]; then
   # relaxed), the second requires the theme to be one omamac actually vendors
   # (so a typo cannot spend a network round-trip on a 404).
   case "$name" in
-    */*|.*|"") exit 0 ;;
+    */*|.*|"") return 1 ;;
   esac
-  [ -f "${THEMES_DIR}/${name}/colors.toml" ] || exit 0
-
-  # Omarchy's own theme switcher (bin/omarchy-theme-switcher) builds its
-  # picker from themes/<name>/preview.{png,jpg,...} — a full desktop
-  # screenshot of the theme in use — falling back to the theme's first
-  # background only when no preview file exists. Every stock theme at v4.0.2
-  # ships preview.png, so that is the single file fetched here.
+  [ -f "${THEMES_DIR}/${name}/colors.toml" ] || return 1
   src="${OMAMAC_CACHE}/theme-previews/${name}.png"
   if [ ! -f "$src" ]; then
-    # Unlike wallpapers there is no bulk prefetch: 22 themes x ~400KB is not
-    # worth downloading until the Theme level is actually opened, and each
-    # item is requested independently by the page, so these run concurrently
-    # and are cached from then on.
-    omamac_fetch_atomic "$(omamac_omarchy_url "$name" preview.png)" "$src" || exit 0
+    omamac_fetch_atomic "$(omamac_omarchy_url "$name" preview.png)" "$src" || return 1
   fi
-  emit_thumb "$src" "${OMAMAC_CACHE}/theme-thumbs/${name}.jpg"
-  exit 0
-fi
+  printf '%s\n' "$src"
+}
 
-theme=$(omamac_state_get theme.name)
-[ -n "$theme" ] || exit 0
-emit_thumb "${OMAMAC_CACHE}/backgrounds/${theme}/$1" "${OMAMAC_CACHE}/thumbs/${theme}/$1.jpg"
+theme_thumb() {
+  local src; src=$(theme_src "$1") || return 1
+  build_thumb "$src" "$(thumb_path "${OMAMAC_CACHE}/theme-thumbs" "$1")"
+}
+
+wallpaper_thumb() {
+  local theme; theme=$(omamac_state_get theme.name); [ -n "$theme" ] || return 1
+  build_thumb "${OMAMAC_CACHE}/backgrounds/${theme}/$1" \
+              "$(thumb_path "${OMAMAC_CACHE}/thumbs/${theme}" "$1")"
+}
+
+emit_uri() {
+  local thumb="$1"
+  printf 'data:image/jpeg;base64,%s\n' "$(base64 -i "$thumb" | tr -d '\n')"
+}
+
+# Build every thumbnail for one picker level, printing "<name><TAB><path>".
+#
+# This exists because the host must run exactly ONE hs.task per level. Measured
+# against the real thing: 22 concurrent hs.tasks, each a trivial bash run that
+# exited 0 with no stderr, delivered ZERO bytes of stdout to their Lua
+# callbacks for 15 to 19 of them, varying run to run, while Hammerspoon logged
+# "hs.task received output data from an unknown task". Fanning out one task per
+# preview is not viable at any payload size, so the fan-out moves in here,
+# where plain background jobs do it correctly — and fast: all 22 themes,
+# uncached, in under a second.
+#
+# Paths, not bytes, for a second reason: even a single task truncated a ~430KB
+# data URI, because with a streaming callback set the completion callback can
+# fire before the last chunk is delivered. Every truncated preview measured
+# ended mid-base64 at an exact multiple of 1024 bytes. The host reads these
+# files itself, so the image bytes never enter a pipe at all.
+emit_paths() {
+  local tmp i=0 name
+  tmp=$(mktemp -d) || return 0
+  # A per-job output file keyed by index, concatenated once every job is done:
+  # 22 jobs appending to one file could interleave partial lines, and names
+  # are not safe as filenames (wallpapers have spaces and commas).
+  if [ "${1:-}" = "--theme" ]; then
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      i=$((i + 1))
+      (
+        p=$(theme_thumb "$name") && [ -n "$p" ] && printf '%s\t%s\n' "$name" "$p"
+      ) > "${tmp}/${i}" 2>/dev/null &
+    done <<< "$("${OMAMAC_DIR}/bin/omamac-theme" --list)"
+  else
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      i=$((i + 1))
+      (
+        p=$(wallpaper_thumb "$name") && [ -n "$p" ] && printf '%s\t%s\n' "$name" "$p"
+      ) > "${tmp}/${i}" 2>/dev/null &
+    done <<< "$("${OMAMAC_DIR}/bin/omamac-bg" --list)"
+  fi
+  wait
+  cat "${tmp}"/* 2>/dev/null
+  rm -rf "$tmp"
+}
+
+# The menu calls this speculatively, so every failure here is a quiet
+# no-output exit 0 — never an error.
+[ $# -ge 1 ] || exit 0
+
+case "$1" in
+  --paths)
+    shift
+    emit_paths "$@"
+    ;;
+  --theme)
+    thumb=$(theme_thumb "${2:-}") || exit 0
+    emit_uri "$thumb"
+    ;;
+  *)
+    thumb=$(wallpaper_thumb "$1") || exit 0
+    emit_uri "$thumb"
+    ;;
+esac

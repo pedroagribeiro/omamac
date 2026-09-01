@@ -38,7 +38,7 @@ test_declares_the_host_message_contract() {
   assert_contains "$js" "window.OMAMAC"
   assert_contains "$js" "messageHandlers"
   assert_contains "$js" '"apply"'
-  assert_contains "$js" '"preview"'
+  assert_contains "$js" '"previews"'
   assert_contains "$js" '"close"'
   assert_contains "$js" "omamacSetPreview"
 }
@@ -75,23 +75,27 @@ test_escape_at_root_posts_close() {
   assert_eq '{"action":"close"}' "$msg"
 }
 
-test_preview_is_requested_only_once_per_name_across_renders() {
+test_previews_are_requested_once_per_level_not_once_per_item() {
   if ! command -v node >/dev/null 2>&1; then
     fail "no JS engine available to drive menu.html — cannot verify the page"
     return
   fi
   # Three renders of the Background level, no thumbnail ever supplied by the
-  # host in between (omamacSetPreview is never called). Without a per-name
-  # "already requested" guard, every render re-sends a preview request for
-  # every name still lacking a thumbnail — O(N^2) sips spawns, and it never
-  # stops for a wallpaper whose conversion keeps failing.
+  # host in between (omamacSetPreview is never called). The page must ask ONCE
+  # for the whole level and never again: the host gets a single hs.task per
+  # level (it loses the stdout of most of its children when a couple of dozen
+  # run at once), so a per-item or per-render request is not something it can
+  # serve. Without the guard this is a fresh batch on every keystroke, each
+  # respawning sips for every item in the level.
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":["a.jpg","b.jpg","c.jpg"]},"colors":{}}'
   local out; out=$(run_driver "$data" "bg-render-thrice")
-  local previews; previews=$(printf '%s' "$out" | jq -c '[.[] | select(.action == "preview")]')
-  local total; total=$(printf '%s' "$previews" | jq 'length')
-  assert_eq 3 "$total" "each of the 3 background names must be requested exactly once across 3 renders"
-  local a_count; a_count=$(printf '%s' "$previews" | jq '[.[] | select(.name == "a.jpg")] | length')
-  assert_eq 1 "$a_count" "a.jpg must be requested exactly once, not once per render"
+  local previews; previews=$(printf '%s' "$out" | jq -c '[.[] | select(.action == "previews")]')
+  assert_eq 1 "$(printf '%s' "$previews" | jq 'length')" \
+    "the level must be requested exactly once across 3 renders of 3 items"
+  assert_eq '{"action":"previews","kind":"bg"}' "$(printf '%s' "$previews" | jq -c '.[0]')"
+  # And emphatically NOT a message per item.
+  assert_eq 0 "$(printf '%s' "$out" | jq '[.[] | select(.action == "preview")] | length')" \
+    "there must be no per-item preview requests left at all"
 }
 
 test_entering_background_requests_previews_and_enter_applies_the_selected_item() {
@@ -107,8 +111,9 @@ test_entering_background_requests_previews_and_enter_applies_the_selected_item()
   # background — not just whatever sel happened to default to.
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":["dawn.jpg","sunset.jpg"]},"colors":{}}'
   local out; out=$(run_driver "$data" "bg-select-apply")
-  local previews; previews=$(printf '%s' "$out" | jq -c '[.[] | select(.action == "preview") | .name] | sort')
-  assert_eq '["dawn.jpg","sunset.jpg"]' "$previews" "entering Background must request a preview for every visible item"
+  local previews; previews=$(printf '%s' "$out" | jq -c '[.[] | select(.action == "previews")]')
+  assert_eq '[{"action":"previews","kind":"bg"}]' "$previews" \
+    "entering Background must request the level's previews once, as kind=bg"
   local msg; msg=$(printf '%s' "$out" | jq -c '.[-1]')
   # Same discipline as the theme test above: action, cmd AND arg asserted
   # together on the one message Enter actually posts, so an apply/preview
@@ -133,25 +138,23 @@ test_header_shows_typed_text_instead_of_placeholder() {
   assert_eq "typed" "$head_class" "header must switch to full opacity once characters are typed"
 }
 
-test_empty_preview_permits_one_retry_then_gives_up() {
+test_an_unavailable_preview_leaves_the_placeholder_and_asks_no_more() {
   if ! command -v node >/dev/null 2>&1; then
     fail "no JS engine available to drive menu.html — cannot verify the page"
     return
   fi
-  # A single Background item. Entering the level requests one preview
-  # (attempt 1); omamacSetPreview(name, "") called twice in a row simulates
-  # the host reporting a failed/still-downloading preview both times it
-  # asked. The bounded retry means exactly ONE more request goes out after
-  # the first empty response (attempt 2) — never a third — and the
-  # placeholder must survive throughout: no <img> is ever appended.
+  # A single Background item whose thumbnail the host could not read. An empty
+  # uri must never be cached — `img.src = ""` renders as a broken image, and
+  # the bordered placeholder is the right thing to keep showing. It must also
+  # not provoke another batch: omamac already tried, inside the one task the
+  # host gets for the level.
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":["only.jpg"]},"colors":{}}'
-  local out; out=$(run_driver "$data" "bg-empty-preview-retry-cap")
-  local previews; previews=$(printf '%s' "$out" | jq -c '[.messages[] | select(.action == "preview" and .name == "only.jpg")] | length')
-  assert_eq 2 "$previews" "an empty preview must permit exactly one retry (2 requests total), then stop"
-  local has_img; has_img=$(printf '%s' "$out" | jq -r '.hasImg')
-  assert_eq "false" "$has_img" "an empty preview must never be cached/rendered as a broken <img>; the placeholder must remain"
+  local out; out=$(run_driver "$data" "bg-unavailable-preview")
+  assert_eq 1 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "previews")] | length')" \
+    "an unavailable preview must not trigger another request for the level"
+  assert_eq "false" "$(printf '%s' "$out" | jq -r '.hasImg')" \
+    "an empty preview must never be cached/rendered as a broken <img>; the placeholder must remain"
 }
-
 
 # ---------------------------------------------------------------------------
 # The Theme level is a coverflow, not a list.
@@ -182,20 +185,20 @@ test_theme_level_renders_the_coverflow_and_not_the_list() {
   assert_eq 1 "$(printf '%s' "$out" | jq '.strip.selectedIndex')" "the coverflow must open on the current theme"
 }
 
-test_theme_level_requests_a_preview_per_theme_with_the_theme_kind() {
+test_theme_level_requests_its_previews_with_the_theme_kind() {
   if ! command -v node >/dev/null 2>&1; then
     fail "no JS engine available to drive menu.html — cannot verify the page"
     return
   fi
   local data='{"theme":{"current":"nord","options":["gruvbox","nord","rose-pine"]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "theme-open-and-report")
-  # kind asserted TOGETHER with the name on each message: the host routes on
-  # it (kind=theme -> `omamac preview --theme <name>`), so a request that
-  # carried the right names with the wrong kind would silently look up
-  # wallpapers of the current theme and come back empty for all three.
-  local previews; previews=$(printf '%s' "$out" | jq -c '[.messages[] | select(.action == "preview") | {name, kind}] | sort_by(.name)')
-  assert_eq '[{"name":"gruvbox","kind":"theme"},{"name":"nord","kind":"theme"},{"name":"rose-pine","kind":"theme"}]' \
-    "$previews" "each theme must be previewed once, as kind=theme"
+  # The kind is what the host routes on: kind=theme becomes
+  # `omamac preview --paths --theme`, which reads the vendored theme list and
+  # fetches each theme's preview shot. With the wrong kind it would instead
+  # list the CURRENT theme's wallpapers and nothing would match.
+  local previews; previews=$(printf '%s' "$out" | jq -c '[.messages[] | select(.action == "previews")]')
+  assert_eq '[{"action":"previews","kind":"theme"}]' "$previews" \
+    "the Theme level must make exactly one previews request, as kind=theme"
 }
 
 test_theme_level_labels_the_selected_theme_omarchy_style() {

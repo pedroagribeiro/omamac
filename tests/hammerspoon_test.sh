@@ -27,7 +27,7 @@ test_speaks_the_page_contract() {
   assert_contains "$src" "menu-data"
   assert_contains "$src" "omamacSetPreview"
   assert_contains "$src" 'b.action == "apply"'
-  assert_contains "$src" 'b.action == "preview"'
+  assert_contains "$src" 'b.action == "previews"'
   assert_contains "$src" 'b.action == "close"'
   # The page is injected as window.OMAMAC ahead of the file's own script.
   assert_contains "$src" "window.OMAMAC"
@@ -157,7 +157,7 @@ LUA
 # the real conditional, with an empty preview response, proves both halves
 # of the fix — the omamac: preview empty log line AND the
 # omamacSetPreview(name, "") push actually reaching the page.
-test_empty_preview_is_logged_and_still_pushed_to_the_page() {
+test_unreadable_thumbnail_is_logged_and_not_pushed() {
   local harness="$TMPDIR_TEST/empty_preview_harness.lua"
   # Single-quoted heredoc: every backslash below must survive into the Lua
   # file byte-for-byte (this is a JSON-escaping routine), so bash must not
@@ -218,6 +218,10 @@ hs = {
   },
   drawing = { windowLevels = { modalPanel = 1 } },
   alert = { show = function() end },
+  -- Deterministic stand-in for hs.base64.encode: the host must read the
+  -- WHOLE file and hand its bytes to this, so echoing the byte count is
+  -- enough to prove both without shipping a Lua base64 implementation.
+  base64 = { encode = function(b) return "B64<" .. #b .. ">" end },
   task = {
     new = function(path, doneCb, args)
       return { start = function() doneCb(0, task_stdout, "") end }
@@ -236,10 +240,12 @@ if not capturedCallback then
   error("openMenu() never registered a message callback via ucc:setCallback")
 end
 
--- Simulate the exact failure this bug report is about: omamac-preview
--- exited 0 with empty stdout (a truncated/missing/unreadable source file).
-task_stdout = ""
-capturedCallback({ body = { action = "preview", name = "1-alpha.jpg" } })
+-- omamac named a thumbnail the host then cannot read (deleted between the
+-- two steps, or a partial write). This must be reported, not swallowed:
+-- silence here is exactly how a wallpaper stuck as a transparent placeholder
+-- went unnoticed once already.
+task_stdout = "1-alpha.jpg\t/definitely/not/a/real/thumbnail.jpg"
+capturedCallback({ body = { action = "previews", kind = "bg" } })
 
 print("EMPTY_PUSH_RESULT_START")
 print("evaljs_count=" .. tostring(#evaljs_calls))
@@ -256,16 +262,14 @@ LUAEOF
   assert_eq 0 "$rc" "empty-preview harness must run cleanly, got: $out"
   [ "$rc" -eq 0 ] || return
 
-  assert_contains "$out" "omamac: preview empty for 1-alpha.jpg" \
-    "an empty preview must be logged with the wallpaper's name, not dropped silently"
+  assert_contains "$out" "omamac: preview unreadable for 1-alpha.jpg" \
+    "an unreadable thumbnail must be logged with the item's name, not dropped silently"
+  assert_contains "$out" "omamac: no bg previews available" \
+    "a level where nothing could be read must say so"
 
   local count; count=$(printf '%s\n' "$out" | sed -n 's/^evaljs_count=//p')
-  assert_eq "1" "$count" "an empty preview must still be pushed to the page exactly once"
-
-  local payload; payload=$(printf '%s\n' "$out" | sed -n 's/^evaljs_payload=//p')
-  assert_contains "$payload" "omamacSetPreview"
-  assert_contains "$payload" "1-alpha.jpg"
-  assert_contains "$payload" '"uri":""' "the empty result must be pushed through as an empty uri, not swallowed"
+  assert_eq "0" "$count" \
+    "an unreadable thumbnail must NOT be pushed: an empty src renders as a broken image, and the page's placeholder is the correct thing to leave in place"
 }
 
 # Structural regression test for the pipe-deadlock fix: hs.task.new with no
@@ -321,6 +325,10 @@ hs = {
   },
   drawing = { windowLevels = { modalPanel = 1 } },
   alert = { show = function() end },
+  -- Deterministic stand-in for hs.base64.encode: the host must read the
+  -- WHOLE file and hand its bytes to this, so echoing the byte count is
+  -- enough to prove both without shipping a Lua base64 implementation.
+  base64 = { encode = function(b) return "B64<" .. #b .. ">" end },
   task = {
     new = function(...)
       captured_argc = select('#', ...)
@@ -346,7 +354,7 @@ end
 -- Drive the exact path that deadlocked live: a preview request, which goes
 -- through runAsync with a `done` callback (apply/cycle also use runAsync,
 -- but with tiny output where the bug never bit).
-capturedCallback({ body = { action = "preview", name = "1-alpha.jpg" } })
+capturedCallback({ body = { action = "previews", kind = "bg" } })
 
 print("STREAM_CB_RESULT_START")
 print("argc=" .. tostring(captured_argc))
@@ -376,14 +384,24 @@ LUAEOF
     "the 4th argument to hs.task.new must be the args table"
 }
 
-# Behavioural companion to the structural test above: proves the streaming
-# callback's accumulated chunks actually reach the page, concatenated with
-# whatever `done` also carries. A real large preview would arrive through
-# many small streamed chunks (the pipe only ever holds ~64KB at a time) with
-# `done`'s own stdout argument empty (the child already flushed everything
-# via the stream) — this fakes exactly that shape.
-test_runasync_concatenates_streamed_chunks_before_pushing_to_the_page() {
+# Behavioural companion to the structural test above, and the regression test
+# for the truncation that made 8 of 19 real previews arrive as flat colour.
+#
+# The host asks for a PATH now, never the bytes — `omamac preview --path`.
+# This streams that path across several hs.task callback invocations with
+# `done`'s own stdout empty (the shape a real chunked read takes) and proves
+# two things at once: the chunks are concatenated in order into a usable path,
+# and the host then reads that file's FULL contents itself. If the bytes still
+# came from stdout, or the concatenation dropped a chunk, the pushed URI would
+# not carry the file's real byte count.
+test_runasync_reassembles_the_path_and_encodes_the_file_itself() {
   local harness="$TMPDIR_TEST/streaming_accumulate_harness.lua"
+  local payload="$TMPDIR_TEST/thumb.jpg"
+  # 5000 bytes of known content — the size is what the stub base64 reports.
+  python3 -c "import sys; sys.stdout.write('x' * 5000)" > "$payload" 2>/dev/null \
+    || printf '%05000d' 0 > "$payload"
+  local size; size=$(wc -c < "$payload" | tr -d ' ')
+
   cat > "$harness" <<'LUAEOF'
 package.loaded["hs.ipc"] = {}
 
@@ -422,11 +440,13 @@ function fakeWebview:delete() end
 function fakeWebview:evaluateJavaScript(js) table.insert(evaljs_calls, js) end
 
 local capturedCallback = nil
+local payloadPath = os.getenv("PREVIEW_PAYLOAD")
 
 hs = {
   ipc = {},
   fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
   json = { encode = stub_encode },
+  base64 = { encode = function(b) return "B64<" .. #b .. ">" end },
   execute = function(cmd) return "" end,
   hotkey = { bind = function() end },
   screen = { mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end },
@@ -437,15 +457,19 @@ hs = {
   drawing = { windowLevels = { modalPanel = 1 } },
   alert = { show = function() end },
   task = {
-    -- Mimics a REAL large preview: the pipe only ever holds a chunk at a
-    -- time, so the stream callback fires repeatedly while `done`'s own
-    -- stdout argument is empty (everything already went through streaming).
+    -- A real read arrives in chunks while `done`'s own stdout is empty. Split
+    -- the path across three of them, mid-component, so any dropped or
+    -- reordered chunk yields a path that cannot be opened.
     new = function(path, doneCb, streamCb, args)
       return {
         start = function()
-          streamCb(nil, "data:image/jpeg;base64,AAAA", "")
-          streamCb(nil, "BBBB", "")
-          streamCb(nil, "CCCC", "")
+          local line = "big.jpg\t" .. payloadPath
+          local n2 = #line
+          local a2 = math.floor(n2 / 3)
+          local b2 = math.floor(2 * n2 / 3)
+          streamCb(nil, line:sub(1, a2), "")
+          streamCb(nil, line:sub(a2 + 1, b2), "")
+          streamCb(nil, line:sub(b2 + 1), "")
           doneCb(0, "", "")
         end,
       }
@@ -464,37 +488,30 @@ if not capturedCallback then
   error("openMenu() never registered a message callback via ucc:setCallback")
 end
 
-capturedCallback({ body = { action = "preview", name = "big.jpg" } })
+capturedCallback({ body = { action = "previews", kind = "bg" } })
 
-print("ACCUMULATE_RESULT_START")
-print("evaljs_count=" .. tostring(#evaljs_calls))
-print("evaljs_payload=" .. tostring(evaljs_calls[1] or "NONE"))
-print("ACCUMULATE_RESULT_END")
+io.write("ACCUMULATE_RESULT_START\n")
+io.write("evaljs_count=" .. tostring(#evaljs_calls) .. "\n")
+io.write("evaljs_payload=" .. tostring(evaljs_calls[1] or "NONE") .. "\n")
+io.write("ACCUMULATE_RESULT_END\n")
 LUAEOF
 
   local out rc
-  out=$(OMAMAC_DIR="$OMAMAC_ROOT" HAMMERSPOON_HOST="$HOST" lua_run "$harness" 2>&1); rc=$?
+  out=$(OMAMAC_DIR="$OMAMAC_ROOT" HAMMERSPOON_HOST="$HOST" PREVIEW_PAYLOAD="$payload" lua_run "$harness" 2>&1); rc=$?
   if [ "$rc" -eq 127 ]; then
-    fail "no executing Lua interpreter available — cannot verify chunk accumulation"
+    fail "no executing Lua interpreter available — cannot verify path reassembly"
     return
   fi
   assert_eq 0 "$rc" "accumulate harness must run cleanly, got: $out"
   [ "$rc" -eq 0 ] || return
 
-  local count; count=$(printf '%s\n' "$out" | sed -n 's/^evaljs_count=//p')
-  assert_eq "1" "$count" "a streamed preview must still be pushed to the page exactly once"
-
-  local payload; payload=$(printf '%s\n' "$out" | sed -n 's/^evaljs_payload=//p')
-  assert_contains "$payload" "data:image/jpeg;base64,AAAABBBBCCCC" \
-    "chunks streamed across multiple hs.task.new callback invocations must be concatenated in order, not dropped or reordered"
+  assert_contains "$out" "evaljs_count=1" "a streamed preview must still be pushed to the page exactly once"
+  assert_contains "$out" "data:image/jpeg;base64,B64<${size}>" \
+    "the pushed URI must be the FULL file read by the host, proving the line survived chunking and the bytes never came through the pipe"
+  assert_contains "$out" '"name":"big.jpg"' \
+    "the name must come from the response line, bound to the file it named"
 }
 
-# The Theme level draws the same coverflow as Background, so both levels send
-# the SAME `preview` action and the host has to route on `kind`. A source grep
-# would not catch a mis-wiring here (both spellings appear in the file either
-# way) — this runs the real onMessage against a task stub that records the
-# argv it was handed, and checks the whole command line, so swapping the two
-# branches, dropping the --theme flag, or defaulting the wrong way all fail.
 test_preview_kind_routes_to_the_right_omamac_subcommand() {
   local harness="$TMPDIR_TEST/preview_kind_harness.lua"
   cat > "$harness" <<'LUAEOF'
@@ -550,6 +567,10 @@ hs = {
   },
   drawing = { windowLevels = { modalPanel = 1 } },
   alert = { show = function() end },
+  -- Deterministic stand-in for hs.base64.encode: the host must read the
+  -- WHOLE file and hand its bytes to this, so echoing the byte count is
+  -- enough to prove both without shipping a Lua base64 implementation.
+  base64 = { encode = function(b) return "B64<" .. #b .. ">" end },
   task = {
     -- args is { "-c", "<the whole shell command>" }; record that command.
     new = function(path, doneCb, streamCb, args)
@@ -574,10 +595,10 @@ if not capturedCallback then
   error("openMenu() never registered a message callback via ucc:setCallback")
 end
 
-capturedCallback({ body = { action = "preview", name = "tokyo-night", kind = "theme" } })
-capturedCallback({ body = { action = "preview", name = "dawn.jpg", kind = "bg" } })
--- No kind at all must keep the historical meaning: a wallpaper.
-capturedCallback({ body = { action = "preview", name = "legacy.jpg" } })
+capturedCallback({ body = { action = "previews", kind = "theme" } })
+capturedCallback({ body = { action = "previews", kind = "bg" } })
+-- No kind at all must keep the historical meaning: wallpapers.
+capturedCallback({ body = { action = "previews" } })
 
 -- io.write, not print: under `nvim --headless` (helpers.sh's last-resort Lua
 -- front-end) print() goes through Vim's message system, which merged two of
@@ -602,25 +623,129 @@ LUAEOF
   # pattern, so each check stays bound to the one message it is about — a
   # branch swap flips "--theme" onto the wrong name and fails, rather than
   # merely moving a matching substring elsewhere in the output.
-  assert_contains "$out" "'preview' '--theme' 'tokyo-night'" \
-    "kind=theme must invoke: omamac preview --theme <name>"
-  assert_contains "$out" "'preview' 'dawn.jpg'" \
-    "kind=bg must invoke the wallpaper form: omamac preview <basename>"
-  case "$out" in *"'--theme' 'dawn.jpg'"*) fail "kind=bg must NOT pass --theme" ;; esac
-  assert_contains "$out" "'preview' 'legacy.jpg'" \
-    "a message with no kind must keep meaning a wallpaper"
-  case "$out" in *"'--theme' 'legacy.jpg'"*) fail "a kindless message must NOT pass --theme" ;; esac
+  assert_contains "$out" "'preview' '--paths' '--theme'" \
+    "kind=theme must invoke: omamac preview --paths --theme"
+  local bg_calls; bg_calls=$(printf '%s\n' "$out" | grep -c "'preview' '--paths'\$")
+  assert_eq 2 "$bg_calls" \
+    "kind=bg and a kindless request must both invoke the wallpaper form: omamac preview --paths"
+  # --paths on EVERY request: the image bytes must never travel through the
+  # task pipe (see fileDataURI in the host), and the fan-out must happen
+  # inside omamac rather than across hs.tasks.
+  local n; n=$(printf '%s\n' "$out" | grep -c -- "--paths")
+  assert_eq 3 "$n" "every request must ask for paths, not bytes"
 
   # And the kind must come back out to the page, or an arriving thumbnail
   # cannot be filed against the level that asked for it. The stub encoder
   # sorts keys, so kind and name land adjacent and can be asserted together
   # — a kind echoed against the wrong name will not match.
-  assert_contains "$out" '"kind":"theme","name":"tokyo-night"' \
-    "the theme kind must be echoed back to the page, bound to the theme name"
-  assert_contains "$out" '"kind":"bg","name":"dawn.jpg"' \
-    "the bg kind must be echoed back to the page, bound to the wallpaper name"
-  assert_contains "$out" '"kind":"bg","name":"legacy.jpg"' \
-    "a kindless request must be echoed back as bg"
+  # The stub task returns no lines, so nothing is pushed — the routing above
+  # is what this test pins. Pushing is covered by the reassembly test below.
+  assert_contains "$out" "omamac: no theme previews available" \
+    "a level that yields nothing must say so rather than failing silently"
+}
+
+# THE regression test for the bug this whole path exists to avoid.
+#
+# hs.task loses output when many run at once. Measured against the real thing:
+# 22 concurrent hs.tasks, each a trivial bash run that exited 0 with no
+# stderr, delivered ZERO bytes of stdout to their Lua callbacks for 15 to 19
+# of them, varying run to run, while Hammerspoon logged "hs.task received
+# output data from an unknown task". On screen that was most of the coverflow
+# stuck on flat placeholders.
+#
+# So the host must spawn exactly ONE task per level however many items the
+# level holds. This drives a 22-item level and counts tasks — the previous
+# per-item design scored 22 here.
+test_one_task_per_level_regardless_of_item_count() {
+  local harness="$TMPDIR_TEST/one_task_harness.lua"
+  cat > "$harness" <<'LUAEOF'
+package.loaded["hs.ipc"] = {}
+
+local starts = 0
+local commands = {}
+
+local function stub_encode(t)
+  if type(t) ~= "table" then error("expected table") end
+  local parts = {}
+  local keys = {}
+  for k in pairs(t) do keys[#keys + 1] = k end
+  table.sort(keys)
+  for _, k in ipairs(keys) do parts[#parts + 1] = '"' .. k .. '":"' .. tostring(t[k]) .. '"' end
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local fakeWebview = {}
+fakeWebview.__index = fakeWebview
+function fakeWebview:windowStyle() return self end
+function fakeWebview:allowTextEntry() return self end
+function fakeWebview:transparent() return self end
+function fakeWebview:level() return self end
+function fakeWebview:deleteOnClose() return self end
+function fakeWebview:html() return self end
+function fakeWebview:show() return self end
+function fakeWebview:bringToFront() return self end
+function fakeWebview:hswindow() return nil end
+function fakeWebview:delete() end
+function fakeWebview:evaluateJavaScript(js) end
+
+local capturedCallback = nil
+
+hs = {
+  ipc = {},
+  fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
+  json = { encode = stub_encode },
+  base64 = { encode = function(b) return "B64<" .. #b .. ">" end },
+  execute = function(cmd) return "" end,
+  hotkey = { bind = function() end },
+  screen = { mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end },
+  webview = {
+    usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
+    new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
+  },
+  drawing = { windowLevels = { modalPanel = 1 } },
+  alert = { show = function() end },
+  task = {
+    new = function(path, doneCb, streamCb, args)
+      return {
+        start = function()
+          starts = starts + 1
+          commands[#commands + 1] = tostring(args and args[2] or "")
+          -- A 22-line response: one per theme, as omamac --paths emits.
+          local lines = {}
+          for i = 1, 22 do lines[#lines + 1] = "theme" .. i .. "\t/no/such/thumb" .. i .. ".jpg" end
+          doneCb(0, table.concat(lines, "\n"), "")
+        end,
+      }
+    end,
+  },
+}
+
+local hostPath = os.getenv("HAMMERSPOON_HOST")
+local ok, err = pcall(dofile, hostPath)
+if not ok then error("failed to load host under stubs: " .. tostring(err)) end
+
+OmamacMenu.open()
+if not capturedCallback then error("openMenu() never registered a message callback") end
+
+capturedCallback({ body = { action = "previews", kind = "theme" } })
+
+io.write("ONE_TASK_START\n")
+io.write("starts=" .. tostring(starts) .. "\n")
+io.write("ONE_TASK_END\n")
+LUAEOF
+
+  local out rc
+  out=$(OMAMAC_DIR="$OMAMAC_ROOT" HAMMERSPOON_HOST="$HOST" lua_run "$harness" 2>&1); rc=$?
+  if [ "$rc" -eq 127 ]; then
+    fail "no executing Lua interpreter available — cannot verify the task count"
+    return
+  fi
+  assert_eq 0 "$rc" "one-task harness must run cleanly, got: $out"
+  [ "$rc" -eq 0 ] || return
+
+  local starts; starts=$(printf '%s\n' "$out" | sed -n 's/^starts=//p')
+  assert_eq "1" "$starts" \
+    "a 22-item level must cost exactly ONE hs.task — hs.task drops the stdout of most of its children when a couple of dozen run at once, silently and with exit status 0"
 }
 
 run_tests

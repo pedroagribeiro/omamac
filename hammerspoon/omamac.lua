@@ -63,6 +63,28 @@ local function runAsync(args, done)
   task:start()
 end
 
+-- Reads a cached thumbnail off disk and returns it as a data: URI, entirely
+-- in-process. This exists because the image bytes CANNOT come back through
+-- hs.task: with a streaming callback set, the completion callback can fire
+-- before the final chunk has been delivered, and the tail is silently lost.
+-- Measured against 19 real 1536x864 previews, 8 arrived truncated — every one
+-- of them at an exact multiple of 1024 bytes, ending mid-base64, while every
+-- intact one ended on a JPEG terminator. Raising the thumbnail resolution to
+-- Omarchy's did not cause that; it just made an existing race easy to hit.
+--
+-- So `omamac preview --path` returns only the path (~100 bytes, always one
+-- chunk) and the bytes are read here. Returns "" on any failure, which is the
+-- same "not available" signal an empty stdout already meant.
+local function fileDataURI(path)
+  if not path or path == "" then return "" end
+  local f = io.open(path, "rb")
+  if not f then return "" end
+  local bytes = f:read("*a")
+  f:close()
+  if not bytes or #bytes == 0 then return "" end
+  return "data:image/jpeg;base64," .. hs.base64.encode(bytes)
+end
+
 local menuWV = nil
 local function hideMenu()
   if menuWV then menuWV:delete(); menuWV = nil end
@@ -95,46 +117,54 @@ local function onMessage(message)
   if b.action == "apply" and b.cmd and b.arg then
     hideMenu()
     runAsync({ b.cmd, b.arg })          -- async: never block the UI on a switch
-  elseif b.action == "preview" and b.name then
+  elseif b.action == "previews" then
     local wv = menuWV
-    -- Two preview sources behind one page message. "bg" is the default so an
-    -- older page (or any message without a kind) keeps its exact previous
-    -- meaning: a wallpaper of the CURRENT theme. "theme" instead asks for a
-    -- named theme's own preview shot, which omamac fetches from upstream on
-    -- demand — a theme other than the current one has nothing cached locally,
-    -- which is the whole point of a theme picker.
+    -- ONE task for the whole level, never one per item. Measured against the
+    -- real thing: 22 concurrent hs.tasks, each a trivial bash run that exited
+    -- 0 with no stderr, delivered ZERO bytes of stdout to their Lua callbacks
+    -- for 15 to 19 of them, varying run to run, while Hammerspoon logged
+    -- "hs.task received output data from an unknown task". So omamac fans out
+    -- internally (plain background jobs, which work) and answers with one
+    -- "<name>\t<path>" line per item.
+    --
+    -- "bg" is the default so a message without a kind keeps the meaning it had
+    -- before the Theme level existed: the current theme's wallpapers.
     local kind = (b.kind == "theme") and "theme" or "bg"
-    local args = (kind == "theme") and { "preview", "--theme", b.name }
-                                    or { "preview", b.name }
+    local args = (kind == "theme") and { "preview", "--paths", "--theme" }
+                                    or { "preview", "--paths" }
     runAsync(args, function(_, stdout)
-      stdout = (stdout or ""):gsub("%s+$", "")
       -- Compare IDENTITY, not truthiness. `wv` was captured while the menu was
       -- open, so it is always non-nil here and a bare `and wv` guards nothing.
       -- What can actually happen is the panel being closed (menuWV = nil) or
-      -- replaced by a newly-opened one while this thumbnail was generating.
-      if wv == menuWV then
-        -- An empty stdout means omamac-preview bailed silently (missing
-        -- source, sips failure, a wallpaper still mid-download — see
-        -- bin/omamac-bg's atomic-fetch fix). That USED to be dropped here
-        -- with no trace at all — exactly how a wallpaper stuck as a
-        -- transparent placeholder went unnoticed. Log it, and push the
-        -- empty result through to the page anyway: omamacSetPreview(name,
-        -- "") tells the page "not available yet", so it can drop the name
-        -- from its own in-flight set and retry (bounded — see menu.html).
-        if stdout == "" then
-          print(string.format("omamac: preview empty for %s", tostring(b.name)))
+      -- replaced by a newly-opened one while these were generating.
+      if wv ~= menuWV then return end
+      local pushed = 0
+      for line in (stdout or ""):gmatch("[^\n]+") do
+        local name, path = line:match("^(.-)\t(.+)$")
+        if name and path then
+          local uri = fileDataURI(path)
+          if uri == "" then
+            -- omamac named a thumbnail this could not read. Silence here is
+            -- exactly how a wallpaper stuck as a transparent placeholder went
+            -- unnoticed once already, so say so.
+            print(string.format("omamac: preview unreadable for %s", tostring(name)))
+          else
+            -- Was a bare `pcall` with the error thrown away, which is how the
+            -- hs.json.encode(string) bug went unnoticed: it threw on every
+            -- call and nothing ever surfaced it.
+            local ok, err = pcall(function()
+              wv:evaluateJavaScript(previewScript(name, uri, kind))
+            end)
+            if ok then
+              pushed = pushed + 1
+            else
+              print(string.format("omamac: preview push failed for %s: %s", tostring(name), tostring(err)))
+            end
+          end
         end
-        -- Was a bare `pcall` with the error thrown away, which is exactly
-        -- how the hs.json.encode(string) bug above went unnoticed: it threw
-        -- on every single call and nothing ever surfaced that. Log on
-        -- failure, with the name, so a future break here is loud instead of
-        -- silent.
-        local ok, err = pcall(function()
-          wv:evaluateJavaScript(previewScript(b.name, stdout, kind))
-        end)
-        if not ok then
-          print(string.format("omamac: preview push failed for %s: %s", tostring(b.name), tostring(err)))
-        end
+      end
+      if pushed == 0 then
+        print(string.format("omamac: no %s previews available", kind))
       end
     end)
   elseif b.action == "close" then

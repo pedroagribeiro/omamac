@@ -17,14 +17,12 @@
 //            handler — there is no visible input box, the header line
 //            doubles as the search display — then reports the header's
 //            text/class instead of the posted messages).
-//            bg-empty-preview-retry-cap (root -> Background with a single
-//            item, then calls window.omamacSetPreview(name, "") twice in a
-//            row — simulating the host reporting a failed/empty preview
-//            twice — and reports the coverflow's resulting image state
-//            alongside the posted messages, to prove the bounded retry:
-//            one retry is sent, no third, and no broken <img> is ever
-//            rendered).
-// For every scenario but type-then-report and bg-empty-preview-retry-cap,
+//            bg-unavailable-preview (root -> Background with a single item,
+//            then calls window.omamacSetPreview(name, "") twice — the host
+//            reporting no readable thumbnail — and reports the coverflow's
+//            image state alongside the posted messages, to prove the level is
+//            still requested exactly once and no broken <img> is rendered).
+// For every scenario but type-then-report and bg-unavailable-preview,
 // prints the captured window.webkit.messageHandlers.omamac.postMessage
 // calls as a JSON array on stdout. type-then-report instead prints a JSON
 // object {messages, headText, headClass}; bg-empty-preview-retry-cap prints
@@ -210,12 +208,13 @@ switch (scenario) {
     // kind" apart from "pushes are being dropped".
     global.window.omamacSetPreview('nord', 'data:image/jpeg;base64,RIGHT', 'theme');
     break;
-  case 'bg-empty-preview-retry-cap':
+  case 'bg-unavailable-preview':
     fireKey('ArrowDown'); // root: Theme -> Font
     fireKey('ArrowDown'); // root: Font -> Background
-    fireKey('Enter');     // enter Background — requests a preview for the only item
-    // Two empty responses in a row from the host — e.g. the wallpaper is
-    // still mid-download both times omamac-preview was asked.
+    fireKey('Enter');     // enter Background — one bulk request for the level
+    // The host reporting that this item has no readable thumbnail. It must
+    // not be cached (an empty src renders as a broken image) and it must not
+    // provoke another batch — omamac already tried, in the one task it gets.
     global.window.omamacSetPreview('only.jpg', '');
     global.window.omamacSetPreview('only.jpg', '');
     break;
@@ -250,7 +249,7 @@ if (scenario === 'theme-misdelivered-preview') {
     headText: hdrEl.textContent,
     headClass: hdrEl.className,
   }));
-} else if (scenario === 'bg-empty-preview-retry-cap') {
+} else if (scenario === 'bg-unavailable-preview') {
   // True if any coverflow item ever got an <img class="cv-img"> appended —
   // renderCoverflow only does that when thumbs[name] is truthy, so this is
   // "did an empty preview ever get cached and rendered as a broken image".
