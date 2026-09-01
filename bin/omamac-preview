@@ -17,7 +17,12 @@ thumbs="${OMAMAC_CACHE}/thumbs/${theme}"
 mkdir -p "$thumbs"
 thumb="${thumbs}/$1.jpg"
 if [ ! -f "$thumb" ] || [ "$src" -nt "$thumb" ]; then
-  if ! "$SIPS" -s format jpeg -Z 600 "$src" --out "$thumb" >/dev/null 2>&1; then
+  # 1024, not 600: the menu's Background level expands the selected item to
+  # 768px wide (Omarchy's coverflow expandedWidth) — 600 upscales into that
+  # and looks soft. Measured cost of the bump is negligible: ~0.05s either
+  # way against a real 4096x2428 source (see tests/preview_test.sh and the
+  # coverflow report for the numbers).
+  if ! "$SIPS" -s format jpeg -Z 1024 "$src" --out "$thumb" >/dev/null 2>&1; then
     # sips creates --out before it knows the conversion failed. Drop the stub, or
     # the [ -f "$thumb" ] check above serves it forever as a malformed "success"
     # — the same trap bin/omamac-bg already guards for curl.

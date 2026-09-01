@@ -92,6 +92,29 @@ test_preview_is_requested_only_once_per_name_across_renders() {
   assert_eq 1 "$a_count" "a.jpg must be requested exactly once, not once per render"
 }
 
+test_entering_background_requests_previews_and_enter_applies_the_selected_item() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # root -> Background renders the coverflow immediately, which must
+  # lazily request a preview for every visible item exactly like the old
+  # list view did. ArrowRight (the coverflow's own selection key, per
+  # Omarchy's ImagePicker.qml) then Enter must post apply/bg bound to
+  # whichever item that leaves selected — "sunset.jpg", the SECOND
+  # background — not just whatever sel happened to default to.
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":["dawn.jpg","sunset.jpg"]},"colors":{}}'
+  local out; out=$(run_driver "$data" "bg-select-apply")
+  local previews; previews=$(printf '%s' "$out" | jq -c '[.[] | select(.action == "preview") | .name] | sort')
+  assert_eq '["dawn.jpg","sunset.jpg"]' "$previews" "entering Background must request a preview for every visible item"
+  local msg; msg=$(printf '%s' "$out" | jq -c '.[-1]')
+  # Same discipline as the theme test above: action, cmd AND arg asserted
+  # together on the one message Enter actually posts, so an apply/preview
+  # action-string swap — or a swap that binds arg to the wrong item — can't
+  # slip through.
+  assert_eq '{"action":"apply","cmd":"bg","arg":"sunset.jpg"}' "$msg"
+}
+
 test_header_shows_typed_text_instead_of_placeholder() {
   if ! command -v node >/dev/null 2>&1; then
     fail "no JS engine available to drive menu.html — cannot verify the page"

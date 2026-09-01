@@ -76,12 +76,17 @@ local function openMenu()
   local html = "<script>window.OMAMAC = " .. json .. ";</script>\n" .. f:read("*a")
   f:close()
 
-  local scr = hs.screen.mainScreen():frame()
-  local w, h = 900, 760
+  -- Full-screen, not a centred box: the page paints a full-viewport scrim
+  -- and centres its own card/coverflow, so a smaller webview frame would
+  -- just clip both the dim and the coverflow (which needs far more width
+  -- than a fixed 900px ever gave it). fullFrame(), not frame(): frame()
+  -- excludes the menu bar / Dock inset, which would leave a sliver of
+  -- undimmed desktop at the top of the screen.
+  local scr = hs.screen.mainScreen():fullFrame()
   local ucc = hs.webview.usercontent.new("omamac")
   ucc:setCallback(onMessage)
   menuWV = hs.webview.new(
-    { x = scr.x + (scr.w - w) / 2, y = scr.y + (scr.h - h) / 2, w = w, h = h },
+    { x = scr.x, y = scr.y, w = scr.w, h = scr.h },
     { developerExtrasEnabled = false }, ucc)
   menuWV:windowStyle({ "borderless" })
   menuWV:allowTextEntry(true)

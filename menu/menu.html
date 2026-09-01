@@ -71,12 +71,62 @@
     font-size: 18px;
     line-height: 1;
   }
-  .icon .thumb { width: 100%; height: 28px; object-fit: cover; border-radius: 4px; }
   .name {
     flex: 1; min-width: 0;
     font-size: 16px; font-weight: 500;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     padding-right: 10px;
+  }
+  #card[hidden] { display: none; }
+
+  /* Background level only: a coverflow, not the 300px card. Omarchy opens
+     its background picker as its own much-wider panel — see
+     ImagePicker.qml (v4.0.2) — so a different layout at this level is
+     faithful, not inconsistent. Values below are lifted verbatim from that
+     source: expandedWidth/Height 768x475, sliceWidth/Height 108x432,
+     sliceSpacing -30 (the item overlap), skewOffset 28 (the parallelogram
+     cut), bottomChromeHeight 30 (with showLabels/filterable both false,
+     which are that component's defaults). One deviation, and it's
+     deliberate: the source has NO `Behavior on width` or any animation
+     anywhere in ImagePicker.qml — x/width/height/y are plain bindings, so
+     the real picker SNAPS between slice and expanded size with no easing.
+     This matches that: no transition is added here.
+  */
+  #cv {
+    display: none;
+    width: 100%; height: 100%;
+    align-items: center;
+    justify-content: center;
+    /* bottomChromeHeight: empty space below the strip. */
+    padding-bottom: 30px;
+  }
+  #cv:not([hidden]) { display: flex; }
+  .cv {
+    position: relative;
+    flex: 0 0 auto;
+    width: 108px;
+    height: 432px;
+    /* skewOffset: 28 -> top-left x=28, top-right x=100%, bottom-right
+       x=100%-28, bottom-left x=0. Same parallelogram on every item,
+       expanded or not. */
+    clip-path: polygon(28px 0, 100% 0, calc(100% - 28px) 100%, 0 100%);
+    /* Neutral placeholder until a data URI arrives — never a broken-image
+       box. */
+    background: color-mix(in srgb, var(--fg) 15%, transparent);
+    cursor: default;
+  }
+  /* sliceSpacing: -30, applied uniformly (even against the expanded item —
+     the source uses the same constant on both sides of it). */
+  .cv:not(:first-child) { margin-left: -30px; }
+  .cv.on {
+    width: 768px;
+    height: 475px;
+    z-index: 1;
+  }
+  .cv-img {
+    display: block;
+    width: 100%; height: 100%;
+    object-fit: cover;
   }
 </style>
 
@@ -84,6 +134,7 @@
   <div id="hdr"></div>
   <div id="list"></div>
 </div>
+<div id="cv" hidden></div>
 
 <script>
   const DATA = window.OMAMAC || { theme: {}, font: {}, bg: {}, colors: {} };
@@ -121,7 +172,7 @@
     root: { crumb: "Go", items: () => ["Theme", "Font", "Background"] },
     theme: { crumb: "Theme", cmd: "theme", items: () => DATA.theme.options || [] },
     font: { crumb: "Font", cmd: "font", items: () => DATA.font.options || [] },
-    bg: { crumb: "Background", cmd: "bg", items: () => DATA.bg.options || [], preview: true },
+    bg: { crumb: "Background", cmd: "bg", items: () => DATA.bg.options || [] },
   };
 
   let level = "root", sel = 0, filter = "";
@@ -129,20 +180,26 @@
   const requested = new Set();             // names already asked for a preview, so
                                             // render()/omamacSetPreview() re-runs
                                             // never re-send for the same name
-  const el = { hdr: hdr, list: list };
+  const el = { hdr: hdr, list: list, card: card, cv: cv };
 
   const visible = () => {
     const L = LEVELS[level], f = filter.toLowerCase();
     return L.items().filter((i) => i.toLowerCase().includes(f));
   };
 
-  function render() {
-    const L = LEVELS[level], items = visible();
-    // No separate input box: the header line doubles as the search display.
-    // Empty filter shows "<Level>…" dimmed; typing shows the typed text at
-    // full opacity.
-    el.hdr.textContent = filter ? filter : (L.crumb + "…");
-    el.hdr.className = filter ? "typed" : "";
+  // Lazily ask the host for a preview, at most once per name. Shared by
+  // renderList (unused for previews today, since only Background has any)
+  // and renderCoverflow, and guarded on `requested` so a re-render — every
+  // keystroke, every omamacSetPreview callback — never re-sends for a name
+  // that's already in flight. Without this it's O(N^2) sips spawns, several
+  // racing to write the same --out path at once.
+  function requestPreview(name) {
+    if (thumbs[name] || requested.has(name)) return;
+    requested.add(name);
+    send({ action: "preview", name });
+  }
+
+  function renderList(items) {
     el.list.innerHTML = "";
     items.forEach((name, i) => {
       const row = document.createElement("div");
@@ -150,24 +207,7 @@
 
       const icon = document.createElement("div");
       icon.className = "icon";
-      if (L.preview) {
-        const img = document.createElement("img");
-        img.className = "thumb";
-        if (thumbs[name]) {
-          img.src = thumbs[name];
-        } else if (!requested.has(name)) {
-          // lazy: host pushes it back via omamacSetPreview. Guarded on
-          // `requested` so a re-render (every keystroke, every
-          // omamacSetPreview callback) never re-sends for a name that's
-          // already in flight — without this it's O(N^2) sips spawns,
-          // several racing to write the same --out path at once.
-          requested.add(name);
-          send({ action: "preview", name });
-        }
-        icon.append(img);
-      } else if (level === "root") {
-        icon.textContent = ROOT_ICONS[name] || "";
-      }
+      if (level === "root") icon.textContent = ROOT_ICONS[name] || "";
       row.append(icon);
 
       const n = document.createElement("span");
@@ -177,6 +217,54 @@
       el.list.append(row);
     });
     el.list.children[sel]?.scrollIntoView({ block: "nearest" });
+  }
+
+  // Background level only: Omarchy's coverflow (ImagePicker.qml v4.0.2),
+  // not the 300px card — see the #cv rule in <style> for the geometry this
+  // mirrors. Every item gets the same clip-path parallelogram; the selected
+  // one alone expands from a 108x432 slice to the full 768x475 image.
+  function renderCoverflow(items) {
+    el.cv.innerHTML = "";
+    items.forEach((name, i) => {
+      const item = document.createElement("div");
+      item.className = "cv" + (i === sel ? " on" : "");
+
+      if (thumbs[name]) {
+        const img = document.createElement("img");
+        img.className = "cv-img";
+        img.src = thumbs[name];
+        item.append(img);
+      } else {
+        // Neutral placeholder (the #cv .cv background) — never a broken
+        // <img>: no src is set until a data URI actually arrives.
+        requestPreview(name);
+      }
+
+      // Matches ImagePicker.qml's MouseArea exactly: clicking the item
+      // that's already centred applies it; clicking any other slides it
+      // into the centre first, same as Left/Right/Enter would.
+      item.onclick = () => { if (i === sel) choose(); else { sel = i; render(); } };
+      el.cv.append(item);
+    });
+  }
+
+  function render() {
+    const L = LEVELS[level], items = visible();
+    // No separate input box: the header line doubles as the search display.
+    // Empty filter shows "<Level>…" dimmed; typing shows the typed text at
+    // full opacity.
+    el.hdr.textContent = filter ? filter : (L.crumb + "…");
+    el.hdr.className = filter ? "typed" : "";
+
+    if (level === "bg") {
+      el.card.hidden = true;
+      el.cv.hidden = false;
+      renderCoverflow(items);
+    } else {
+      el.card.hidden = false;
+      el.cv.hidden = true;
+      renderList(items);
+    }
   }
 
   // The host calls this when a thumbnail finishes generating.
@@ -201,8 +289,11 @@
 
   document.addEventListener("keydown", (e) => {
     const n = visible().length;
-    if (e.key === "ArrowDown") { sel = n ? (sel + 1) % n : 0; render(); }
-    else if (e.key === "ArrowUp") { sel = n ? (sel - 1 + n) % n : 0; render(); }
+    // Background is a horizontal coverflow, so Left/Right are its natural
+    // selection keys — but Up/Down still work too, same as every other
+    // level, for consistency across the whole menu.
+    if (e.key === "ArrowDown" || e.key === "ArrowRight") { sel = n ? (sel + 1) % n : 0; render(); }
+    else if (e.key === "ArrowUp" || e.key === "ArrowLeft") { sel = n ? (sel - 1 + n) % n : 0; render(); }
     else if (e.key === "Enter") choose();
     else if (e.key === "Escape") back();
     else if (e.key === "Backspace") { filter = filter.slice(0, -1); sel = 0; render(); }

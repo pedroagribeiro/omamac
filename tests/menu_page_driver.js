@@ -8,6 +8,11 @@
 //            with no thumbnails ever supplied by the host — reproduces the
 //            re-render-while-pending path that must only request a preview
 //            once per name).
+//            bg-select-apply (root -> Background via the coverflow, moves
+//            the selection with ArrowRight — the coverflow's own key —
+//            then applies it, to prove entering Background requests
+//            previews and Enter posts apply/bg for whichever item is
+//            selected, not just index 0).
 //            type-then-report (types "the" via the document-level keydown
 //            handler — there is no visible input box, the header line
 //            doubles as the search display — then reports the header's
@@ -55,15 +60,22 @@ function makeElement() {
   return el;
 }
 
-// The page reads #hdr and #list as bare globals — the way a browser exposes
-// elements with an id attribute — so these must exist as globals before the
-// page script runs, not just be reachable via getElementById. There is no
-// #filter element any more: the header line (#hdr) doubles as the search
-// display, so the page never calls document.getElementById.
+// The page reads #hdr, #list, #card and #cv as bare globals — the way a
+// browser exposes elements with an id attribute — so these must exist as
+// globals before the page script runs, not just be reachable via
+// getElementById. #card is the 300px root/theme/font menu; #cv is the
+// Background-level coverflow strip — the page toggles `.hidden` on
+// whichever one isn't showing. There is no #filter element any more: the
+// header line (#hdr) doubles as the search display, so the page never
+// calls document.getElementById.
 const hdrEl = makeElement();
 const listEl = makeElement();
+const cardEl = makeElement();
+const cvEl = makeElement();
 global.hdr = hdrEl;
 global.list = listEl;
+global.card = cardEl;
+global.cv = cvEl;
 
 const documentListeners = {};
 global.document = {
@@ -123,6 +135,13 @@ switch (scenario) {
     fireKey('Enter');     // enter Background — first render() call
     fireKey('ArrowDown'); // second render() call, no thumbs supplied meanwhile
     fireKey('ArrowDown'); // third render() call, ditto
+    break;
+  case 'bg-select-apply':
+    fireKey('ArrowDown');  // root: Theme -> Font
+    fireKey('ArrowDown');  // root: Font -> Background
+    fireKey('Enter');      // enter Background (coverflow), sel resets to 0
+    fireKey('ArrowRight'); // move selection to the second item, coverflow-style
+    fireKey('Enter');      // apply the now-selected (second) item
     break;
   case 'type-then-report':
     fireKey('t');
