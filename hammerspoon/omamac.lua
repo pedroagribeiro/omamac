@@ -39,6 +39,19 @@ local function hideMenu()
   if menuWV then menuWV:delete(); menuWV = nil end
 end
 
+-- Builds the JS the host pushes into the page to deliver a generated
+-- thumbnail. `hs.json.encode` only accepts a TABLE (a bare string raises
+-- "incorrect type 'string' for argument 1 (expected table)") — so this
+-- encodes ONE table holding both `name` and `uri` and destructures it on
+-- the JS side, rather than encoding each string separately at the call
+-- site. That also gets the data: URI safely escaped for embedding in JS.
+-- Pure aside from the encode call itself, so it can be exercised under a
+-- plain Lua interpreter with a stub hs.json.encode — no webview needed.
+local function previewScript(name, uri)
+  local payload = hs.json.encode({ name = name, uri = uri })
+  return "(function(p){window.omamacSetPreview(p.name,p.uri)})(" .. payload .. ")"
+end
+
 local function onMessage(message)
   local b = message and message.body
   if type(b) ~= "table" then return end
@@ -54,10 +67,17 @@ local function onMessage(message)
       -- What can actually happen is the panel being closed (menuWV = nil) or
       -- replaced by a newly-opened one while this thumbnail was generating.
       if stdout ~= "" and wv == menuWV then
-        pcall(function()
-          wv:evaluateJavaScript("window.omamacSetPreview(" ..
-            hs.json.encode(b.name) .. "," .. hs.json.encode(stdout) .. ")")
+        -- Was a bare `pcall` with the error thrown away, which is exactly
+        -- how the hs.json.encode(string) bug above went unnoticed: it threw
+        -- on every single call and nothing ever surfaced that. Log on
+        -- failure, with the name, so a future break here is loud instead of
+        -- silent.
+        local ok, err = pcall(function()
+          wv:evaluateJavaScript(previewScript(b.name, stdout))
         end)
+        if not ok then
+          print(string.format("omamac: preview push failed for %s: %s", tostring(b.name), tostring(err)))
+        end
       end
     end)
   elseif b.action == "close" then

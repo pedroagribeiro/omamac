@@ -34,6 +34,24 @@ lua_parse_check() {
   return 127
 }
 
+# Actually EXECUTES a Lua script file (unlike lua_parse_check, which only
+# parses) with whatever fully-executing front-end exists, and prints its
+# stdout. Same discovery order/spirit as lua_parse_check (luac is omitted —
+# it never executes) so this fails loudly rather than silently skipping when
+# nothing can run it. Returns the interpreter's exit code, or 127 if no
+# runnable Lua exists — callers must treat 127 as a failure, not a skip.
+lua_run() {
+  if command -v lua >/dev/null 2>&1; then lua "$1"; return $?; fi
+  if command -v luajit >/dev/null 2>&1; then luajit "$1"; return $?; fi
+  if command -v nvim >/dev/null 2>&1; then
+    nvim --headless \
+      -c "lua local ok, err = pcall(dofile, '$1'); if not ok then io.stderr:write(tostring(err) .. '\n'); vim.cmd('cq') end" \
+      -c q
+    return $?
+  fi
+  return 127
+}
+
 setup_tmp_home() {
   TMPDIR_TEST="$(mktemp -d)"
   export HOME="$TMPDIR_TEST/home"
