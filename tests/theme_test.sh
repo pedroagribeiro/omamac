@@ -137,4 +137,83 @@ test_missing_colors_toml_is_still_a_hard_failure_even_though_ghostty_is_now_a_wa
   assert_eq "" "$("$OMAMAC_BIN" theme --current)"
 }
 
+# Regression pin: Ghostty must be reloaded right after it is rendered, not
+# after the other four renderers. render/nvim is swapped for a slow stub that
+# appends "renderer" to a shared order log only once it finally finishes; the
+# stubbed `kill` (what ghostty_reload calls) appends "reload" the moment it
+# signals Ghostty. Against the old ordering — reload as the very last step —
+# "renderer" would land first even though nvim is slow, because the reload
+# call itself wouldn't happen until after nvim (and everything else) had
+# already completed. Against the fix, "reload" always lands first: it runs
+# before nvim is even started, regardless of how long nvim then takes.
+test_ghostty_reload_happens_before_the_slower_renderers() {
+  setup_themes
+  export OMAMAC_PS="$TMPDIR_TEST/ps-running"
+  local fake="$TMPDIR_TEST/fake-omamac"
+  local order_log="$TMPDIR_TEST/order.log"
+  : > "$order_log"
+  mkdir -p "$fake"
+  cp -r "$OMAMAC_ROOT/bin" "$OMAMAC_ROOT/lib" "$OMAMAC_ROOT/render" "$fake/"
+  cat > "$fake/render/nvim" <<EOF
+#!/usr/bin/env bash
+sleep 1
+printf 'renderer\n' >> "$order_log"
+EOF
+  chmod +x "$fake/render/nvim"
+  cat > "$TMPDIR_TEST/kill-recording" <<EOF
+#!/usr/bin/env bash
+printf 'reload\n' >> "$order_log"
+exit 0
+EOF
+  chmod +x "$TMPDIR_TEST/kill-recording"
+  export OMAMAC_KILL="$TMPDIR_TEST/kill-recording"
+
+  OMAMAC_DIR="$fake" "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
+
+  assert_eq "reload
+renderer" "$(cat "$order_log")"
+}
+
+# The complaint this whole change fixes: a theme's FIRST visit must not make
+# the switch wait on a wallpaper download. Stubs OMAMAC_FETCH to sleep, the
+# way a real multi-megabyte download would, and asserts the command returns
+# well before that sleep would have elapsed, then polls (bounded) for the
+# wallpaper to land moments later from the detached fetch.
+test_switching_theme_does_not_block_on_an_uncached_wallpaper_fetch() {
+  setup_themes
+  printf '1-alpha.jpg\n' > "$OMAMAC_THEMES_DIR/tokyo-night/backgrounds.index"
+  cat > "$TMPDIR_TEST/slow-fetch" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+dest=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) dest="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$dest" ] && printf 'wallpaper-bytes' > "$dest"
+exit 0
+EOF
+  chmod +x "$TMPDIR_TEST/slow-fetch"
+  export OMAMAC_FETCH="$TMPDIR_TEST/slow-fetch"
+  export OMAMAC_OMARCHY_RAW="file://irrelevant" OMAMAC_OMARCHY_REV="rev"
+
+  local start end elapsed
+  start=$(date +%s)
+  "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
+  end=$(date +%s)
+  elapsed=$((end - start))
+  assert_eq 1 "$([ "$elapsed" -lt 2 ] && echo 1 || echo 0)" \
+    "theme switch must not block on the wallpaper fetch (took ${elapsed}s)"
+
+  local tries=0
+  while [ ! -s "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg" ] && [ "$tries" -lt 50 ]; do
+    sleep 0.1
+    tries=$((tries + 1))
+  done
+  assert_eq "wallpaper-bytes" "$(cat "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg" 2>/dev/null)" \
+    "the wallpaper must still land a little later, from the detached fetch"
+}
+
 run_tests

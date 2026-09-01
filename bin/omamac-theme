@@ -29,6 +29,13 @@ ghostty_reload() {
 # "first" ordering here. Non-fatal: a theme with no cached/fetchable
 # backgrounds is not an error, and a wallpaper failure never fails the
 # switch — only render/ghostty's colors.toml check is a hard failure.
+#
+# If nothing is cached yet, `bg --list` would trigger a full fetch of the
+# theme's backgrounds.index — several megabytes on a first visit, and the
+# reason theme switches used to take ~7s. That download must never hold up
+# the switch, so it is kicked off detached instead of run in line; the
+# synchronous "apply the first cached wallpaper" path below is unaffected
+# and stays exactly as fast as before.
 apply_theme_wallpaper() {
   local name="$1" cache_dir cur_bg first
   cache_dir="${OMAMAC_CACHE}/backgrounds/${name}"
@@ -36,13 +43,40 @@ apply_theme_wallpaper() {
   case "$cur_bg" in
     "${cache_dir}/"*) return 0 ;;
   esac
-  first=$("${OMAMAC_DIR}/bin/omamac-bg" --list 2>/dev/null | head -1)
-  [ -n "$first" ] || return 0
-  "${OMAMAC_DIR}/bin/omamac-bg" "$first" >/dev/null 2>&1 || log_warn "could not set wallpaper for ${name}"
+
+  if [ -n "$(ls -A "$cache_dir" 2>/dev/null)" ]; then
+    first=$("${OMAMAC_DIR}/bin/omamac-bg" --list 2>/dev/null | head -1)
+    [ -n "$first" ] || return 0
+    "${OMAMAC_DIR}/bin/omamac-bg" "$first" >/dev/null 2>&1 || log_warn "could not set wallpaper for ${name}"
+    return 0
+  fi
+
+  # Nothing cached: a theme with no backgrounds.index has nothing to fetch
+  # either way, and that must stay a silent no-op — not a spawned job.
+  [ -f "${THEMES_DIR}/${name}/backgrounds.index" ] || return 0
+
+  log_info "Wallpaper: fetching ${name}'s backgrounds in the background; it will appear in a few seconds."
+  # macOS has no setsid. `set -m` inside a subshell is what gives the
+  # backgrounded job its OWN process group (ordinary bash job-control
+  # behaviour) instead of inheriting this script's — this CLI is launched
+  # from Hammerspoon via hs.task, and a child left in the SAME process
+  # group as this script can be killed the moment hs.task tears the parent
+  # down, well before a multi-megabyte download finishes. nohup (ignoring
+  # SIGHUP) covers the other common teardown path. Runs the exact same
+  # "list, take the first entry, set it" sequence as the synchronous branch
+  # above, just detached and a few seconds later.
+  (
+    set -m
+    nohup bash -c '
+      first=$("$1/bin/omamac-bg" --list 2>/dev/null | head -1)
+      [ -n "$first" ] && "$1/bin/omamac-bg" "$first" >/dev/null 2>&1
+    ' _ "$OMAMAC_DIR" >/dev/null 2>&1 &
+    disown
+  )
 }
 
 theme_set() {
-  local name="$1" dir font
+  local name="$1" dir font pid_nvim pid_btop pid_bat pid_macos
   dir="${THEMES_DIR}/${name}"
   [ -d "$dir" ] || { log_error "unknown theme: ${name}"; return 1; }
   # The single hard-failure condition: a theme this can't even resolve
@@ -55,20 +89,36 @@ theme_set() {
   [ -f "${dir}/colors.toml" ] || { log_error "theme ${name} has no colors.toml"; return 1; }
 
   font=$(omamac_state_get font)
+
+  # Ghostty first, and reload it immediately: it's the one renderer the user
+  # is looking at, so time-to-visible-change must not wait on the other four
+  # renderers, the state write, or a wallpaper fetch.
   "${OMAMAC_DIR}/render/ghostty" "$dir" "$CONFIG_ROOT" "$font" || log_warn "ghostty render failed"
-  "${OMAMAC_DIR}/render/nvim" "$dir" "$OMAMAC_STATE" || log_warn "nvim render failed"
-  "${OMAMAC_DIR}/render/btop" "$dir" "$CONFIG_ROOT" || log_warn "btop render failed"
-  "${OMAMAC_DIR}/render/bat" "$dir" "$CONFIG_ROOT" || log_warn "bat render failed"
-  "${OMAMAC_DIR}/render/macos" "$dir" || log_warn "could not set system appearance"
-
-  omamac_state_set theme.name "$name"
-  apply_theme_wallpaper "$name"
-
   if ghostty_reload; then
     log_info "Ghostty: reloaded ${name}."
   else
     log_info "Ghostty: applied ${name} (not running; applies on next launch)."
   fi
+
+  # nvim/btop/bat/macos write to distinct paths and don't depend on each
+  # other or on Ghostty, so run them concurrently rather than paying for
+  # four renderers sequentially. theme_set must still not return until all
+  # four are done — tests assert on their output files right after the
+  # command — so each is `wait`ed individually by its own pid: that is what
+  # lets a failing renderer log its own specific warning instead of
+  # collapsing all four into one generic message.
+  "${OMAMAC_DIR}/render/nvim" "$dir" "$OMAMAC_STATE" & pid_nvim=$!
+  "${OMAMAC_DIR}/render/btop" "$dir" "$CONFIG_ROOT" & pid_btop=$!
+  "${OMAMAC_DIR}/render/bat" "$dir" "$CONFIG_ROOT" & pid_bat=$!
+  "${OMAMAC_DIR}/render/macos" "$dir" & pid_macos=$!
+
+  wait "$pid_nvim"  || log_warn "nvim render failed"
+  wait "$pid_btop"  || log_warn "btop render failed"
+  wait "$pid_bat"   || log_warn "bat render failed"
+  wait "$pid_macos" || log_warn "could not set system appearance"
+
+  omamac_state_set theme.name "$name"
+  apply_theme_wallpaper "$name"
 }
 
 case "${1:-}" in
