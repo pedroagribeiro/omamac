@@ -1,49 +1,83 @@
 <style>
   :root {
-    --bg: #1a1b26; --fg: #a9b1d6; --accent: #7aa2f7; --sel: #33467c;
+    --bg: #1a1b26; --fg: #a9b1d6; --accent: #7aa2f7;
+    /* Omarchy renders the menu in the system monospace font — the same one
+       the active theme sets. This is only a fallback for when font.current
+       is empty; the script below overrides it with the real theme font. */
+    --font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
   body {
-    font: 14px -apple-system, ui-sans-serif, system-ui;
-    background: transparent; color: var(--fg);
-    display: flex; align-items: center; justify-content: center; height: 100vh;
+    font-family: var(--font-family);
+    font-size: 14px;
+    color: var(--fg);
+    /* Full-viewport scrim behind everything: theme background at 50% alpha. */
+    background: color-mix(in srgb, var(--bg) 50%, transparent);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
   }
   #card {
-    width: 560px; max-height: 70vh; display: flex; flex-direction: column;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    border: 1px solid color-mix(in srgb, var(--fg) 20%, transparent);
-    border-radius: 14px; overflow: hidden;
-    box-shadow: 0 24px 60px rgba(0,0,0,.45);
-    backdrop-filter: blur(24px);
+    width: 300px;
+    /* Fully opaque — no blur, no translucency. */
+    background: var(--bg);
+    border: 1px solid var(--fg);
+    border-radius: 8px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
-  #head {
-    display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px;
-    border-bottom: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+  #hdr {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+    background: transparent;
+    opacity: .58;                 /* placeholder: "<Level>…" */
   }
-  #crumb { color: var(--accent); font-weight: 600; }
-  #filter {
-    flex: 1; border: 0; outline: 0; background: transparent;
-    color: var(--fg); font: inherit;
+  #hdr.typed { opacity: 1; }      /* once the user has typed something */
+  #list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow-y: auto;
+    /* Not part of the spec values — needed so a long list (e.g. 22 themes)
+       doesn't push the card off-screen; the card itself has no max-height
+       in the source values given. */
+    max-height: min(60vh, 400px);
   }
-  #list { overflow-y: auto; padding: 6px; }
   .row {
-    display: flex; align-items: center; gap: 10px;
-    padding: 8px 10px; border-radius: 8px; cursor: default;
+    display: flex;
+    align-items: center;
+    height: 50px;
+    border-radius: 8px;
+    cursor: default;
+    color: var(--fg);
   }
-  .row.on { background: var(--sel); }
-  .row img { width: 64px; height: 36px; object-fit: cover; border-radius: 4px; }
-  .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cur { color: var(--accent); font-size: 12px; }
-  #hint {
-    padding: 8px 16px; font-size: 11px; opacity: .5;
-    border-top: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+  .row.on {
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+    color: var(--accent);         /* icon + label both pick this up via currentColor */
+  }
+  .icon {
+    width: 36px; flex: 0 0 36px;
+    margin-left: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    line-height: 1;
+  }
+  .icon .thumb { width: 100%; height: 28px; object-fit: cover; border-radius: 4px; }
+  .name {
+    flex: 1; min-width: 0;
+    font-size: 16px; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    padding-right: 10px;
   }
 </style>
 
 <div id="card">
-  <div id="head"><span id="crumb">Style</span><input id="filter" placeholder="Filter…"></div>
+  <div id="hdr"></div>
   <div id="list"></div>
-  <div id="hint">↑↓ navigate · ⏎ select · esc back</div>
 </div>
 
 <script>
@@ -55,17 +89,27 @@
     if (DATA.colors.background) r.setProperty("--bg", DATA.colors.background);
     if (DATA.colors.foreground) r.setProperty("--fg", DATA.colors.foreground);
     if (DATA.colors.accent) r.setProperty("--accent", DATA.colors.accent);
-    if (DATA.colors.selection_background) r.setProperty("--sel", DATA.colors.selection_background);
   }
 
+  // Render in whatever monospace font the user has chosen, same as Omarchy.
+  // Falls back to a system monospace stack when font.current is empty; the
+  // Nerd Font glyphs below simply won't render in that case, which is
+  // acceptable and must not break layout.
+  if (DATA.font && DATA.font.current) {
+    document.documentElement.style.setProperty(
+      "--font-family",
+      `"${DATA.font.current}", ui-monospace, SFMono-Regular, Menlo, monospace`
+    );
+  }
+
+  // Nerd Font glyphs for the root-level rows.
+  const ROOT_ICONS = { Theme: "\u{f0e0c}", Font: "\u{f031}", Background: "\u{f03e}" };
+
   const LEVELS = {
-    root: { crumb: "Style", items: () => ["Theme", "Font", "Background"] },
-    theme: { crumb: "Theme", cmd: "theme", items: () => DATA.theme.options || [],
-             current: () => DATA.theme.current },
-    font: { crumb: "Font", cmd: "font", items: () => DATA.font.options || [],
-            current: () => DATA.font.current },
-    bg: { crumb: "Background", cmd: "bg", items: () => DATA.bg.options || [],
-          current: () => (DATA.bg.current || "").split("/").pop(), preview: true },
+    root: { crumb: "Go", items: () => ["Theme", "Font", "Background"] },
+    theme: { crumb: "Theme", cmd: "theme", items: () => DATA.theme.options || [] },
+    font: { crumb: "Font", cmd: "font", items: () => DATA.font.options || [] },
+    bg: { crumb: "Background", cmd: "bg", items: () => DATA.bg.options || [], preview: true },
   };
 
   let level = "root", sel = 0, filter = "";
@@ -73,7 +117,7 @@
   const requested = new Set();             // names already asked for a preview, so
                                             // render()/omamacSetPreview() re-runs
                                             // never re-send for the same name
-  const el = { crumb: crumb, list: list, filter: document.getElementById("filter") };
+  const el = { hdr: hdr, list: list };
 
   const visible = () => {
     const L = LEVELS[level], f = filter.toLowerCase();
@@ -81,33 +125,42 @@
   };
 
   function render() {
-    const L = LEVELS[level], items = visible(), cur = L.current?.();
-    el.crumb.textContent = L.crumb;
+    const L = LEVELS[level], items = visible();
+    // No separate input box: the header line doubles as the search display.
+    // Empty filter shows "<Level>…" dimmed; typing shows the typed text at
+    // full opacity.
+    el.hdr.textContent = filter ? filter : (L.crumb + "…");
+    el.hdr.className = filter ? "typed" : "";
     el.list.innerHTML = "";
     items.forEach((name, i) => {
       const row = document.createElement("div");
       row.className = "row" + (i === sel ? " on" : "");
+
+      const icon = document.createElement("div");
+      icon.className = "icon";
       if (L.preview) {
         const img = document.createElement("img");
+        img.className = "thumb";
         if (thumbs[name]) {
           img.src = thumbs[name];
         } else if (!requested.has(name)) {
           // lazy: host pushes it back via omamacSetPreview. Guarded on
-          // `requested` so a re-render (every keystroke in the filter box,
-          // every omamacSetPreview callback) never re-sends for a name
-          // that's already in flight — without this it's O(N^2) sips spawns,
+          // `requested` so a re-render (every keystroke, every
+          // omamacSetPreview callback) never re-sends for a name that's
+          // already in flight — without this it's O(N^2) sips spawns,
           // several racing to write the same --out path at once.
           requested.add(name);
           send({ action: "preview", name });
         }
-        row.append(img);
+        icon.append(img);
+      } else if (level === "root") {
+        icon.textContent = ROOT_ICONS[name] || "";
       }
+      row.append(icon);
+
       const n = document.createElement("span");
       n.className = "name"; n.textContent = name; row.append(n);
-      if (name === cur) {
-        const c = document.createElement("span");
-        c.className = "cur"; c.textContent = "current"; row.append(c);
-      }
+
       row.onclick = () => { sel = i; choose(); };
       el.list.append(row);
     });
@@ -123,7 +176,7 @@
     const pick = items[sel];
     if (level === "root") {
       level = { Theme: "theme", Font: "font", Background: "bg" }[pick];
-      sel = 0; filter = ""; el.filter.value = ""; render();
+      sel = 0; filter = ""; render();
     } else {
       send({ action: "apply", cmd: LEVELS[level].cmd, arg: pick });
     }
@@ -131,7 +184,7 @@
 
   function back() {
     if (level === "root") return send({ action: "close" });
-    level = "root"; sel = 0; filter = ""; el.filter.value = ""; render();
+    level = "root"; sel = 0; filter = ""; render();
   }
 
   document.addEventListener("keydown", (e) => {
@@ -140,14 +193,13 @@
     else if (e.key === "ArrowUp") { sel = n ? (sel - 1 + n) % n : 0; render(); }
     else if (e.key === "Enter") choose();
     else if (e.key === "Escape") back();
+    else if (e.key === "Backspace") { filter = filter.slice(0, -1); sel = 0; render(); }
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      filter += e.key; sel = 0; render();
+    }
     else return;
     e.preventDefault();
   });
 
-  el.filter.addEventListener("input", (e) => {
-    filter = e.target.value; sel = 0; render();
-  });
-
-  el.filter.focus();
   render();
 </script>

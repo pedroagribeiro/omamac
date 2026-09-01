@@ -92,4 +92,20 @@ test_preview_is_requested_only_once_per_name_across_renders() {
   assert_eq 1 "$a_count" "a.jpg must be requested exactly once, not once per render"
 }
 
+test_header_shows_typed_text_instead_of_placeholder() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # There is no visible input box: the header line doubles as the search
+  # display. With nothing typed it shows "<Level>…" dimmed; the moment the
+  # user types, it must show exactly what they typed, not the placeholder.
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "type-then-report")
+  local head_text; head_text=$(printf '%s' "$out" | jq -r '.headText')
+  local head_class; head_class=$(printf '%s' "$out" | jq -r '.headClass')
+  assert_eq "the" "$head_text" "header must show the typed text, not the placeholder, once characters are typed"
+  assert_eq "typed" "$head_class" "header must switch to full opacity once characters are typed"
+}
+
 run_tests

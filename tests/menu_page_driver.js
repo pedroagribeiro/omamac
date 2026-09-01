@@ -8,8 +8,14 @@
 //            with no thumbnails ever supplied by the host — reproduces the
 //            re-render-while-pending path that must only request a preview
 //            once per name).
-// Prints the captured window.webkit.messageHandlers.omamac.postMessage calls
-// as a JSON array on stdout.
+//            type-then-report (types "the" via the document-level keydown
+//            handler — there is no visible input box, the header line
+//            doubles as the search display — then reports the header's
+//            text/class instead of the posted messages).
+// For every scenario but type-then-report, prints the captured
+// window.webkit.messageHandlers.omamac.postMessage calls as a JSON array on
+// stdout. type-then-report instead prints a JSON object
+// {messages, headText, headClass}.
 'use strict';
 const fs = require('fs');
 
@@ -49,19 +55,24 @@ function makeElement() {
   return el;
 }
 
-// The page reads #crumb and #list as bare globals — the way a browser
-// exposes elements with an id attribute — so these must exist as globals
-// before the page script runs, not just be reachable via getElementById.
-const crumbEl = makeElement();
+// The page reads #hdr and #list as bare globals — the way a browser exposes
+// elements with an id attribute — so these must exist as globals before the
+// page script runs, not just be reachable via getElementById. There is no
+// #filter element any more: the header line (#hdr) doubles as the search
+// display, so the page never calls document.getElementById.
+const hdrEl = makeElement();
 const listEl = makeElement();
-const filterEl = makeElement();
-global.crumb = crumbEl;
+global.hdr = hdrEl;
 global.list = listEl;
 
 const documentListeners = {};
 global.document = {
   documentElement: { style: { setProperty() {} } },
-  getElementById(id) { return id === 'filter' ? filterEl : null; },
+  // Deliberately returns null for everything: the restyled page has no
+  // remaining getElementById call, so if one shows up here it means the
+  // page regressed to needing an element this shim doesn't provide, and
+  // this should fail loudly rather than silently returning a stand-in.
+  getElementById() { return null; },
   createElement() { return makeElement(); },
   addEventListener(type, fn) { documentListeners[type] = fn; },
 };
@@ -85,7 +96,7 @@ global.window = {
 };
 
 // The page's top-level `const`/`function` declarations stay local to this
-// Function body; its free references to document/window/crumb/list resolve
+// Function body; its free references to document/window/hdr/list resolve
 // against the globals set up above, same as a <script> tag in a real page.
 new Function(js)();
 
@@ -113,9 +124,22 @@ switch (scenario) {
     fireKey('ArrowDown'); // second render() call, no thumbs supplied meanwhile
     fireKey('ArrowDown'); // third render() call, ditto
     break;
+  case 'type-then-report':
+    fireKey('t');
+    fireKey('h');
+    fireKey('e');
+    break;
   default:
     console.error('unknown scenario: ' + scenario);
     process.exit(1);
 }
 
-process.stdout.write(JSON.stringify(messages));
+if (scenario === 'type-then-report') {
+  process.stdout.write(JSON.stringify({
+    messages,
+    headText: hdrEl.textContent,
+    headClass: hdrEl.className,
+  }));
+} else {
+  process.stdout.write(JSON.stringify(messages));
+}
