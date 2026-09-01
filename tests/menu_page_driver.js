@@ -248,6 +248,7 @@ if (scenario === 'font-open-and-report' || scenario === 'root-report') {
     list: listReport(),
     cardHidden: cardEl.hidden,
     cvHidden: cvEl.hidden,
+    cardWidth: cardEl.style._props['--card-w'],
   }));
 } else if (scenario === 'theme-misdelivered-preview') {
   process.stdout.write(JSON.stringify({

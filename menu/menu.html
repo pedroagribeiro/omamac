@@ -26,7 +26,12 @@
     overflow: hidden;
   }
   #card {
-    width: 300px;
+    /* Set per level by render(). Omarchy special-cases exactly two menus to
+       520 and leaves everything else at 300 (Menu.qml:111) — the Font list is
+       one of them, because family names are long enough that most of them
+       ellipsis away in a 300px card. The clamp is upstream's own
+       `panel.width - gapsOut * 2`, with gapsOut 5. */
+    width: min(var(--card-w, 300px), calc(100vw - 10px));
     /* Fully opaque — no blur, no translucency. */
     background: var(--bg);
     border: 1px solid var(--fg);
@@ -317,6 +322,9 @@
       items: () => ["Theme", "Font", "Background"],
       icon: (name) => ROOT_ICONS[name] || "",
     },
+    // `width` follows Menu.qml:111, which gives style.font (and the
+    // screen-record menu, which omamac has no equivalent of) 520 and every
+    // other card 300.
     theme: {
       crumb: "Theme", cmd: "theme", picker: "theme", labels: true,
       current: () => DATA.theme.current || "",
@@ -328,6 +336,7 @@
       items: () => DATA.font.options || [],
       icon: (name) =>
         name === (DATA.font.current || "") ? CURRENT_MARK : ROOT_ICONS.Font,
+      width: 520,
     },
     bg: {
       crumb: "Background", cmd: "bg", picker: "bg", labels: false,
@@ -489,6 +498,7 @@
     // full opacity.
     el.hdr.textContent = filter ? filter : (L.crumb + "…");
     el.hdr.className = filter ? "typed" : "";
+    el.card.style.setProperty("--card-w", (L.width || 300) + "px");
 
     // Each branch clears the OTHER view's contents as well as filling its
     // own. Hiding a container leaves its children — and their onclick

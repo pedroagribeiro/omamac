@@ -336,4 +336,25 @@ test_root_rows_keep_their_own_icons() {
     "root must keep the Theme/Font/Background glyphs from omarchy-menu.jsonc"
 }
 
+# The Font menu is WIDER than every other card. Menu.qml:111 special-cases
+# exactly two menus —
+#
+#   (activeMenu === "trigger.capture.screenrecord" || activeMenu === "style.font")
+#     ? Style.space(520) : Style.space(300)
+#
+# — and font family names are long enough that at 300px most of them ellipsis
+# away ("CaskaydiaMono Nerd\u2026", "JetBrainsMono Nerd\u2026"), which is
+# exactly what a font list must not do.
+test_font_menu_is_wider_than_the_other_card_levels() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Andale Mono","Menlo","Monaco"]},"bg":{"current":"","options":[]},"colors":{}}'
+  assert_eq "520px" "$(run_driver "$data" "font-open-and-report" | jq -r '.cardWidth')" \
+    "the Font level must use Omarchy's wider card, or long family names ellipsis away"
+  assert_eq "300px" "$(run_driver "$data" "root-report" | jq -r '.cardWidth')" \
+    "every other card level keeps the standard width"
+}
+
 run_tests
