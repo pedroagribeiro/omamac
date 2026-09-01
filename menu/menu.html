@@ -5,6 +5,11 @@
        the active theme sets. This is only a fallback for when font.current
        is empty; the script below overrides it with the real theme font. */
     --font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* Omarchy exposes ONE cornerRadius token, shared by the card and its rows,
+       and Style.qml declares it 0 by default (on Linux it mirrors Hyprland's
+       decoration:rounding). Square is therefore the faithful default. Set this
+       to e.g. 8px if you prefer rounded corners — both follow together. */
+    --radius: 0px;
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
@@ -22,7 +27,7 @@
     /* Fully opaque — no blur, no translucency. */
     background: var(--bg);
     border: 1px solid var(--fg);
-    border-radius: 8px;
+    border-radius: var(--radius);
     padding: 18px;
     display: flex;
     flex-direction: column;
@@ -51,7 +56,7 @@
     display: flex;
     align-items: center;
     height: 50px;
-    border-radius: 8px;
+    border-radius: var(--radius);
     cursor: default;
     color: var(--fg);
   }
