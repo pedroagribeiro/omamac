@@ -177,4 +177,109 @@ test_list_empty_and_exits_0_when_neither_source_available() {
   assert_eq "" "$out" "font --list must print nothing when no font source is available"
 }
 
+# ---------------------------------------------------------------------------
+# The list is restricted to Nerd Fonts.
+#
+# Ghostty's +list-fonts already only reports families it can use as a terminal
+# font, so everything it returns is monospace — including CJK system faces like
+# Lantinghei TC, Osaka and PCMyungjo, which are fixed-width for CJK and useless
+# as coding fonts. Narrowing to Nerd Fonts is what actually shortens the list
+# to fonts worth picking.
+#
+# Detection is by naming convention, which is the only signal available: no
+# fontconfig on Darwin, and no CoreText from the shell. Patched families are
+# named "<X> Nerd Font[ Mono|Propo]" or suffixed " NF"/" NFM"/" NFP".
+# ---------------------------------------------------------------------------
+
+setup_mixed_font_list() {
+  setup_font_env_no_fclist
+  # A realistic slice of what `ghostty +list-fonts` returns on this machine.
+  cat > "$TMPDIR_TEST/fc-mixed" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' \
+  'Andale Mono' \
+  'CaskaydiaMono Nerd Font Mono' \
+  'Courier New' \
+  'JetBrainsMono Nerd Font Mono' \
+  'Lantinghei TC' \
+  'Menlo' \
+  'Menlo Nerd Font' \
+  'Monaco' \
+  'Monaspace Argon NF' \
+  'Osaka' \
+  'PCMyungjo' \
+  'PT Mono'
+EOF
+  chmod +x "$TMPDIR_TEST/fc-mixed"
+  export OMAMAC_FCLIST="$TMPDIR_TEST/fc-mixed"
+}
+
+test_list_keeps_only_nerd_fonts() {
+  setup_mixed_font_list
+  local out; out=$("$OMAMAC_BIN" font --list)
+  assert_eq 'CaskaydiaMono Nerd Font Mono
+JetBrainsMono Nerd Font Mono
+Menlo Nerd Font
+Monaspace Argon NF' "$out"
+}
+
+test_list_recognises_the_nf_suffix_convention() {
+  setup_mixed_font_list
+  # Monaspace ships as "Monaspace Argon NF" rather than spelling out "Nerd
+  # Font", so a naive `grep "Nerd Font"` would silently drop the whole family.
+  assert_contains "$("$OMAMAC_BIN" font --list)" "Monaspace Argon NF"
+}
+
+test_list_drops_cjk_system_faces_that_are_monospace_but_not_coding_fonts() {
+  setup_mixed_font_list
+  local out; out=$("$OMAMAC_BIN" font --list)
+  local n
+  for n in 'Lantinghei TC' 'Osaka' 'PCMyungjo' 'Courier New' 'Monaco'; do
+    case "$out" in
+      *"$n"*) fail "non-Nerd family '$n' must not be offered" ;;
+    esac
+  done
+}
+
+# The active font is what the menu marks with a check. A picker that cannot
+# show what is currently applied is worse than one carrying an extra row, so
+# the current font is always listed — whether or not it matches the filter.
+# This matters in practice: the list used to be unfiltered, so a font set
+# before this change can easily be one the filter now rejects.
+test_list_always_includes_the_current_font_even_when_it_fails_the_filter() {
+  setup_mixed_font_list
+  omamac_state_set font "Monaco" 2>/dev/null || printf 'Monaco\n' > "$OMAMAC_STATE/font"
+  local out; out=$("$OMAMAC_BIN" font --list)
+  assert_contains "$out" "Monaco" "the font currently in use must stay listed"
+  # ...and it must still be sorted into place, not appended.
+  assert_eq 'CaskaydiaMono Nerd Font Mono
+JetBrainsMono Nerd Font Mono
+Menlo Nerd Font
+Monaco
+Monaspace Argon NF' "$out"
+}
+
+# ...but only when it is genuinely installed. Injecting a name that no font
+# source reports would offer a row that font_set then refuses to apply.
+test_list_does_not_resurrect_a_current_font_that_is_not_installed() {
+  setup_mixed_font_list
+  printf 'Uninstalled Sans\n' > "$OMAMAC_STATE/font"
+  case "$("$OMAMAC_BIN" font --list)" in
+    *"Uninstalled Sans"*) fail "a current font that no source reports must not be offered" ;;
+  esac
+}
+
+test_font_filter_is_overridable() {
+  setup_mixed_font_list
+  # An escape hatch for widening the list without editing the script.
+  export OMAMAC_FONT_FILTER='mono'
+  local out; out=$("$OMAMAC_BIN" font --list)
+  assert_contains "$out" "Andale Mono"
+  assert_contains "$out" "PT Mono"
+  case "$out" in
+    *"Courier New"*) fail "the override must still be a filter, not a bypass" ;;
+  esac
+  unset OMAMAC_FONT_FILTER
+}
+
 run_tests

@@ -6,6 +6,26 @@ source "${OMAMAC_DIR}/lib/log.sh"
 source "${OMAMAC_DIR}/lib/state.sh"
 GHOSTTY="${OMAMAC_GHOSTTY:-/Applications/Ghostty.app/Contents/MacOS/ghostty}"
 
+# Which families the picker offers, as a case-insensitive ERE.
+#
+# Every source below already reports only monospace families — `ghostty
+# +list-fonts` lists what Ghostty will accept as a terminal font, and fc-list
+# is asked for :spacing=100 — so "monospace" is not the useful axis. What that
+# still lets through is CJK system faces (Lantinghei TC, Osaka, PCMyungjo):
+# fixed-width for CJK, useless as coding fonts, and most of what made the list
+# feel long. Narrowing to Nerd Fonts is what actually shortens it.
+#
+# Detection is by naming convention because it is the only signal available:
+# fontconfig does not work on Darwin (see font_list_raw) and CoreText is not
+# reachable from the shell. Patched families are named "<X> Nerd Font",
+# optionally " Mono"/" Propo", or suffixed " NF"/" NFM"/" NFP" — Monaspace
+# ships as "Monaspace Argon NF", so matching only "Nerd Font" would silently
+# drop that whole family.
+#
+# Overridable, so the list can be widened without editing this file:
+#   OMAMAC_FONT_FILTER='.' omamac font --list     # everything the source has
+OMAMAC_FONT_FILTER="${OMAMAC_FONT_FILTER:-nerd font|(^| )nf[mp]?$}"
+
 # Font source resolution, in priority order:
 #   1. OMAMAC_FCLIST, if the caller EXPLICITLY set it (tests stub this; the
 #      `${OMAMAC_FCLIST+x}` check, not `:-`, is what lets an explicit empty/odd
@@ -33,12 +53,28 @@ font_list_raw() {
 }
 
 font_list() {
-  # `|| true`: under `pipefail`, grep exits 1 when it emits no lines — which
-  # happens legitimately whenever no font source is available. That must
-  # stay a clean, empty result, not a failure that trips the script's exit
-  # code (there's no `set -e`, but the case statement below returns
-  # font_list's own status as the script's exit status).
-  font_list_raw | grep -v -i -E 'emoji|signwriting' | grep -v -E '^\.' | sort -u || true
+  # `|| true` throughout: under `pipefail`, grep exits 1 when it emits no
+  # lines — which happens legitimately whenever no font source is available,
+  # or when nothing matches the filter. That must stay a clean, empty result,
+  # not a failure that trips the script's exit code (there's no `set -e`, but
+  # the case statement below returns font_list's own status as the script's
+  # exit status).
+  local available filtered current
+  available=$(font_list_raw | grep -v -i -E 'emoji|signwriting' | grep -v -E '^\.' || true)
+  filtered=$(printf '%s\n' "$available" | grep -i -E "$OMAMAC_FONT_FILTER" || true)
+
+  # The font currently in use is always offered, filter or not. It is the row
+  # the menu marks with a check, and a picker that cannot show what is applied
+  # is worse than one carrying an extra row — which matters here because the
+  # list was unfiltered until now, so a font chosen earlier can easily be one
+  # the filter rejects. Only if it is genuinely installed, though: injecting a
+  # name no source reports would offer a row that font_set then refuses.
+  current=$(omamac_state_get font)
+  if [ -n "$current" ] && printf '%s\n' "$available" | grep -qxF "$current"; then
+    filtered=$(printf '%s\n%s\n' "$filtered" "$current")
+  fi
+
+  printf '%s\n' "$filtered" | grep -v '^$' | sort -u || true
 }
 
 font_set() {
