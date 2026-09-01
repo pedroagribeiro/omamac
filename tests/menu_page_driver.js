@@ -185,6 +185,12 @@ switch (scenario) {
     fireKey('h');
     fireKey('e');
     break;
+  case 'root-report':
+    break;              // report the root level exactly as first rendered
+  case 'font-open-and-report':
+    fireKey('ArrowDown'); // root: Theme -> Font
+    fireKey('Enter');     // enter Font (a list, not a coverflow)
+    break;
   case 'theme-select-apply':
     fireKey('Enter');      // root -> Theme (the coverflow)
     fireKey('ArrowRight'); // move one along, coverflow-style
@@ -223,7 +229,27 @@ switch (scenario) {
     process.exit(1);
 }
 
-if (scenario === 'theme-misdelivered-preview') {
+// Walks the card's row list and reports what a viewer would see per row:
+// the icon-column glyph, the label, and whether it is the selected row.
+function listReport() {
+  return listEl.children.map((row) => {
+    const kids = row.children || [];
+    return {
+      icon: (kids[0] || {}).textContent || '',
+      name: (kids[1] || {}).textContent || '',
+      on: /(^| )on( |$)/.test(row.className),
+    };
+  });
+}
+
+if (scenario === 'font-open-and-report' || scenario === 'root-report') {
+  process.stdout.write(JSON.stringify({
+    messages,
+    list: listReport(),
+    cardHidden: cardEl.hidden,
+    cvHidden: cvEl.hidden,
+  }));
+} else if (scenario === 'theme-misdelivered-preview') {
   process.stdout.write(JSON.stringify({
     messages,
     strip: {

@@ -281,6 +281,23 @@
   // root level *is* that Style submenu.
   const ROOT_ICONS = { Theme: "\u{f0e0c}", Font: "\u{e659}", Background: "\u{f03e}" };
 
+  // Font is not a picker upstream, it is a menu PROVIDER — omarchy-menu.jsonc
+  // gives Theme and Background an `action:` that launches the image picker,
+  // but gives Font `"provider":"fonts"`, so it stays a list of rows in the
+  // card. Menu.qml builds each provider row as
+  //
+  //   icon: (value === current) ? "\u2713" : (spec.icon || "")
+  //
+  // and the fonts provider's own icon is \ue659 — the very same glyph the
+  // root Font entry uses. So every font row carries a glyph and the ACTIVE
+  // font's row shows a check in place of it.
+  //
+  // This is deliberately NOT the other marker mechanism in that file:
+  // MenuModel.labelFor appends " \u2713" to a STATIC entry's label when its
+  // `checked:` expression is true. Provider rows leave the label alone and
+  // put the marker in the icon column, which is what a font list is.
+  const CURRENT_MARK = "\u2713";
+
   // Geometry constants, ImagePicker.qml (v4.0.2). See the #cv block in
   // <style> for where each one lands.
   const EXPANDED_W = 768, SLICE_W = 108, SLICE_SPACING = -30;
@@ -295,7 +312,11 @@
   // item rather than at index 0, which matters a great deal once a level
   // holds 22 themes.
   const LEVELS = {
-    root: { crumb: "Go", items: () => ["Theme", "Font", "Background"] },
+    root: {
+      crumb: "Go",
+      items: () => ["Theme", "Font", "Background"],
+      icon: (name) => ROOT_ICONS[name] || "",
+    },
     theme: {
       crumb: "Theme", cmd: "theme", picker: "theme", labels: true,
       current: () => DATA.theme.current || "",
@@ -305,6 +326,8 @@
       crumb: "Font", cmd: "font",
       current: () => DATA.font.current || "",
       items: () => DATA.font.options || [],
+      icon: (name) =>
+        name === (DATA.font.current || "") ? CURRENT_MARK : ROOT_ICONS.Font,
     },
     bg: {
       crumb: "Background", cmd: "bg", picker: "bg", labels: false,
@@ -357,6 +380,7 @@
   }
 
   function renderList(items) {
+    const iconFor = LEVELS[level].icon;
     el.list.innerHTML = "";
     items.forEach((name, i) => {
       const row = document.createElement("div");
@@ -364,7 +388,10 @@
 
       const icon = document.createElement("div");
       icon.className = "icon";
-      if (level === "root") icon.textContent = ROOT_ICONS[name] || "";
+      // Per level, because upstream's icon column means different things at
+      // each: a fixed glyph per root entry, and per provider row either the
+      // provider's glyph or the check marking the active value.
+      if (iconFor) icon.textContent = iconFor(name);
       row.append(icon);
 
       const n = document.createElement("span");

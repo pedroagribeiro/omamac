@@ -269,4 +269,71 @@ test_theme_previews_are_not_confused_with_background_previews() {
     "a correctly-kinded push must still reach the Theme coverflow"
 }
 
+# ---------------------------------------------------------------------------
+# The Font level.
+#
+# Unlike Theme and Background — which upstream launches as the image picker
+# via an `action:` — Font is a menu PROVIDER, so it stays a list of rows in
+# the card. omarchy-menu.jsonc:
+#
+#   "style.font": {"icon":"\ue659","label":"Font","provider":"fonts"}
+#
+# and Menu.qml builds each row as
+#
+#   icon: (value === current) ? "\u2713" : (spec.icon || "")
+#
+# with the fonts provider's own icon also being \ue659. So every font row
+# carries a glyph, and the ACTIVE font's row shows a check in place of it.
+# Note this is not the `checked:` mechanism, which appends " \u2713" to a
+# static entry's label instead — provider rows put the marker in the icon
+# column. And every label renders in the menu's own font (`root.fontFamily`
+# throughout Menu.qml), never in the typeface it names.
+# ---------------------------------------------------------------------------
+
+test_font_rows_carry_the_provider_glyph_and_mark_the_current_one() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Andale Mono","Menlo","Monaco"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "font-open-and-report")
+
+  assert_eq "false" "$(printf '%s' "$out" | jq -r '.cardHidden')" "Font is a card list, not a coverflow"
+  assert_eq "true"  "$(printf '%s' "$out" | jq -r '.cvHidden')"
+  assert_eq 3 "$(printf '%s' "$out" | jq '.list | length')"
+
+  # The active font is marked with a check IN THE ICON COLUMN...
+  # jq -a escapes non-ASCII, so no PUA literal has to survive in this file —
+  # the codebase has already had glyphs silently blanked by being typed raw.
+  assert_eq '"\u2713"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "Menlo") | .icon')" \
+    "the current font's row must show the check marker"
+  # ...and its LABEL must stay clean: upstream only appends " \u2713" to a
+  # label for static `checked:` entries, never for provider rows.
+  assert_eq "Menlo" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')" \
+    "the label must not have the marker appended to it"
+
+  # Every other row carries the fonts provider glyph, not an empty column.
+  assert_eq '"\ue659"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "Andale Mono") | .icon')"
+  assert_eq '"\ue659"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "Monaco") | .icon')"
+  assert_eq 0 "$(printf '%s' "$out" | jq '[.list[] | select(.icon == "")] | length')" \
+    "no font row may have an empty icon column"
+
+  # And the level opens on the current font, the way every level now does.
+  assert_eq "Menlo" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')"
+}
+
+test_root_rows_keep_their_own_icons() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # Regression guard for the change above: the per-level icon function must not
+  # cost the root level its three glyphs (U+F0E0C, U+E659, U+F03E, verbatim
+  # from omarchy-menu.jsonc).
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "root-report")
+  assert_eq '["\udb83\ude0c","\ue659","\uf03e"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root must keep the Theme/Font/Background glyphs from omarchy-menu.jsonc"
+}
+
 run_tests
