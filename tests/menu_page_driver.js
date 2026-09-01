@@ -180,8 +180,12 @@ if (scenario === 'type-then-report') {
   // True if any coverflow item ever got an <img class="cv-img"> appended —
   // renderCoverflow only does that when thumbs[name] is truthy, so this is
   // "did an empty preview ever get cached and rendered as a broken image".
+  // The image lives inside a .cv-inner wrapper (item -> .cv-inner -> img),
+  // one level deeper than .cv itself — see .cv-inner in <style> and its
+  // construction in renderCoverflow.
   const hasImg = cvEl.children.some((item) =>
-    (item.children || []).some((c) => c.className === 'cv-img'));
+    (item.children || []).some((inner) =>
+      (inner.children || []).some((c) => c.className === 'cv-img')));
   process.stdout.write(JSON.stringify({ messages, hasImg }));
 } else {
   process.stdout.write(JSON.stringify(messages));

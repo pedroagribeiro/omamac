@@ -110,10 +110,16 @@
        x=100%-28, bottom-left x=0. Same parallelogram on every item,
        expanded or not. */
     clip-path: polygon(28px 0, 100% 0, calc(100% - 28px) 100%, 0 100%);
-    /* Neutral placeholder until a data URI arrives — never a broken-image
-       box. */
-    background: color-mix(in srgb, var(--fg) 15%, transparent);
     cursor: default;
+    /* Border, ImagePicker.qml (v4.0.2) verbatim: strokeWidth 1/3px,
+       strokeColor foreground-at-28%/accent for unselected/selected. A plain
+       CSS `border` would be sliced off at the slanted edges by the
+       clip-path above, so instead this element's own background stands in
+       for the stroke: --s is the thickness, and .cv-inner (below) clips to
+       the same parallelogram inset by --s on every edge, leaving exactly
+       that margin of this background visible as a uniform-width outline. */
+    --s: 1px;
+    background: color-mix(in srgb, var(--fg) 28%, transparent);
   }
   /* sliceSpacing: -30, applied uniformly (even against the expanded item —
      the source uses the same constant on both sides of it). */
@@ -122,6 +128,29 @@
     width: 768px;
     height: 475px;
     z-index: 1;
+    --s: 3px;
+    background: var(--accent);
+  }
+  .cv-inner {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    /* Same parallelogram as .cv, inset by --s on every edge — the visible
+       gap between this clip and .cv's own is the stroke. The skew is only
+       28px across a 432–475px height, so insetting both axes by the same
+       --s keeps the perpendicular thickness close enough to uniform that
+       the discrepancy isn't visible. */
+    clip-path: polygon(
+      calc(28px + var(--s)) var(--s),
+      calc(100% - var(--s)) var(--s),
+      calc(100% - 28px - var(--s)) calc(100% - var(--s)),
+      var(--s) calc(100% - var(--s))
+    );
+    /* Neutral placeholder until a data URI arrives — never a broken-image
+       box. Lives here (not on .cv) so an item awaiting its preview still
+       shows a bordered frame instead of a solid block. */
+    background: color-mix(in srgb, var(--fg) 15%, transparent);
   }
   .cv-img {
     display: block;
@@ -238,16 +267,23 @@
       const item = document.createElement("div");
       item.className = "cv" + (i === sel ? " on" : "");
 
+      // .cv-inner carries the image (or the neutral placeholder, via its
+      // own CSS background) clipped inset from .cv's parallelogram by the
+      // border thickness — see the .cv/.cv-inner rules in <style>.
+      const inner = document.createElement("div");
+      inner.className = "cv-inner";
+
       if (thumbs[name]) {
         const img = document.createElement("img");
         img.className = "cv-img";
         img.src = thumbs[name];
-        item.append(img);
+        inner.append(img);
       } else {
-        // Neutral placeholder (the #cv .cv background) — never a broken
+        // Neutral placeholder (the .cv-inner background) — never a broken
         // <img>: no src is set until a data URI actually arrives.
         requestPreview(name);
       }
+      item.append(inner);
 
       // Matches ImagePicker.qml's MouseArea exactly: clicking the item
       // that's already centred applies it; clicking any other slides it
