@@ -102,8 +102,15 @@
     );
   }
 
-  // Nerd Font glyphs for the root-level rows.
-  const ROOT_ICONS = { Theme: "\u{f0e0c}", Font: "\u{f031}", Background: "\u{f03e}" };
+  // Nerd Font glyphs for the root-level rows. Sourced verbatim from
+  // omarchy v4.0.2's own menu definition
+  // (default/omarchy/omarchy-menu.jsonc), stored as \u{} escapes rather
+  // than literal PUA characters so a future edit/copy cannot silently
+  // blank them (that's exactly what happened to the Font and marker
+  // glyphs when they were first typed as literals here). Omarchy also
+  // defines U+EBCF for the "Style" parent entry — unused here, since our
+  // root level *is* that Style submenu.
+  const ROOT_ICONS = { Theme: "\u{f0e0c}", Font: "\u{e659}", Background: "\u{f03e}" };
 
   const LEVELS = {
     root: { crumb: "Go", items: () => ["Theme", "Font", "Background"] },
