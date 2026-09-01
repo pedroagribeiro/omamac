@@ -28,10 +28,39 @@ local function run(args)
   return hs.execute(cmd) or ""
 end
 
+-- hs.task.new with no streaming callback lets the child's stdout fill the
+-- OS pipe buffer (~64KB) and block forever — Hammerspoon only drains stdout
+-- on exit, so a child that's still blocked writing never exits, and `done`
+-- never fires. This bit us for real: raising thumbnail resolution (sips -Z
+-- 600 -> 1024, for the coverflow's 768px expanded view) pushed most preview
+-- data URIs over that threshold. Verified live against all 8 tokyo-night
+-- previews: only the 2 under 64KB ever returned; the other 6 (72KB-232KB)
+-- never fired `done` even though `sips` had long since finished and the
+-- thumbnail existed on disk — the callback was lost, not the work.
+--
+-- The fix is to pass hs.task.new a THIRD (streaming) callback, which fires
+-- repeatedly as output arrives and must return true to keep streaming. That
+-- drains the pipe continuously so the child never blocks on a full buffer.
+-- Accumulate every streamed chunk and concatenate it with whatever `done`
+-- ALSO receives (a task's final flush can arrive either through the stream
+-- callback or as part of the done callback's own stdout argument — this
+-- combines both rather than assuming one path is authoritative). Re-verified
+-- live post-fix: all 8/8 previews arrived.
 local function runAsync(args, done)
   local cmd = string.format("PATH=%s %s %s", PATH, shquote(OMAMAC_BIN_PATH),
     table.concat(hs.fnutils.imap(args, shquote), " "))
-  hs.task.new("/bin/sh", done, { "-c", cmd }):start()
+  local acc = {}
+  local task = hs.task.new("/bin/sh",
+    function(rc, stdout, stderr)
+      local full = table.concat(acc) .. (stdout or "")
+      if done then done(rc, full, stderr) end
+    end,
+    function(_, stdout, _)
+      if stdout and #stdout > 0 then table.insert(acc, stdout) end
+      return true
+    end,
+    { "-c", cmd })
+  task:start()
 end
 
 local menuWV = nil
