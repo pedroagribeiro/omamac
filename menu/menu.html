@@ -10,6 +10,9 @@
        decoration:rounding). Square is therefore the faithful default. Set this
        to e.g. 8px if you prefer rounded corners — both follow together. */
     --radius: 0px;
+    /* Qt's `style: Text.Outline; styleColor: Util.alpha(dimColor, 0.7)` on the
+       picker's label and filter lines — dimColor is the theme background. */
+    --outline: color-mix(in srgb, var(--bg) 70%, transparent);
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
@@ -47,9 +50,9 @@
     flex-direction: column;
     gap: 3px;
     overflow-y: auto;
-    /* Not part of the spec values — needed so a long list (e.g. 22 themes)
-       doesn't push the card off-screen; the card itself has no max-height
-       in the source values given. */
+    /* Not part of the spec values — needed so a long list doesn't push the
+       card off-screen; the card itself has no max-height in the source
+       values given. */
     max-height: min(60vh, 400px);
   }
   .row {
@@ -79,31 +82,57 @@
   }
   #card[hidden] { display: none; }
 
-  /* Background level only: a coverflow, not the 300px card. Omarchy opens
-     its background picker as its own much-wider panel — see
-     ImagePicker.qml (v4.0.2) — so a different layout at this level is
-     faithful, not inconsistent. Values below are lifted verbatim from that
-     source: expandedWidth/Height 768x475, sliceWidth/Height 108x432,
-     sliceSpacing -30 (the item overlap), skewOffset 28 (the parallelogram
-     cut), bottomChromeHeight 30 (with showLabels/filterable both false,
-     which are that component's defaults). One deviation, and it's
-     deliberate: the source has NO `Behavior on width` or any animation
-     anywhere in ImagePicker.qml — x/width/height/y are plain bindings, so
-     the real picker SNAPS between slice and expanded size with no easing.
-     This matches that: no transition is added here.
-  */
+  /* ------------------------------------------------------------------ *
+     Picker levels (Theme and Background): Omarchy's coverflow, not the
+     300px card.
+
+     Both levels are ONE component upstream. omarchy.image-picker's manifest
+     describes itself as the "Image-grid selector overlay used for
+     wallpapers, themes, and any other directory of images", and both
+     switchers shell out to the same omarchy-menu-images:
+
+       omarchy-theme-switcher  --print-name --show-labels --filterable ...
+       omarchy-theme-bg-switcher                       (neither flag)
+
+     So the only difference between the two levels here is the chrome under
+     the strip, exactly as those flags imply — the geometry, the borders and
+     the dim are shared.
+
+     Values below are lifted verbatim from ImagePicker.qml (v4.0.2):
+     expandedWidth/Height 768x475, sliceWidth/Height 108x432, sliceSpacing
+     -30 (the item overlap), skewOffset 28 (the parallelogram cut),
+     bottomChromeHeight = showLabels ? (filterable ? 104 : 74)
+                                     : (filterable ?  60 : 30).
+     One deviation, and it's deliberate: the source has NO `Behavior on
+     width` or any animation anywhere in ImagePicker.qml — x/width/height/y
+     are plain bindings, so the real picker SNAPS between slice and expanded
+     size with no easing. This matches that: no transition is added here.
+   * ------------------------------------------------------------------ */
   #cv {
     display: none;
-    width: 100%; height: 100%;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    /* bottomChromeHeight: empty space below the strip. */
-    padding-bottom: 30px;
+    width: 100%; height: 100%;
   }
   #cv:not([hidden]) { display: flex; }
-  .cv {
+  /* The strip positions every item ABSOLUTELY relative to the selected one,
+     the way ImagePicker.qml's delegate binds `x` off `relativeIndex`. A
+     plain flex row cannot do this: it centres the strip as a whole, so with
+     22 themes the selected item drifts far off-centre. Upstream hardcodes
+     the carousel width to expandedWidth + 13 slices (1782px) and centres
+     within it; using the real viewport width instead keeps the selected
+     item dead-centre on any display, which is the intent that constant
+     encodes on the screens Omarchy targets. */
+  #cvstrip {
     position: relative;
-    flex: 0 0 auto;
+    width: 100%;
+    height: 475px;              /* expandedHeight */
+    overflow: hidden;
+  }
+  .cv {
+    position: absolute;
+    top: 21.5px;                /* (expandedHeight - sliceHeight) / 2 */
     width: 108px;
     height: 432px;
     /* skewOffset: 28 -> top-left x=28, top-right x=100%, bottom-right
@@ -120,14 +149,13 @@
        that margin of this background visible as a uniform-width outline. */
     --s: 1px;
     background: color-mix(in srgb, var(--fg) 28%, transparent);
+    z-index: 50;
   }
-  /* sliceSpacing: -30, applied uniformly (even against the expanded item —
-     the source uses the same constant on both sides of it). */
-  .cv:not(:first-child) { margin-left: -30px; }
   .cv.on {
+    top: 0;
     width: 768px;
     height: 475px;
-    z-index: 1;
+    z-index: 100;
     --s: 3px;
     background: var(--accent);
   }
@@ -152,18 +180,74 @@
        shows a bordered frame instead of a solid block. */
     background: color-mix(in srgb, var(--fg) 15%, transparent);
   }
+  /* ImagePicker.qml lays a `Rectangle { color: Util.alpha(dimColor,
+     item.selected ? 0 : 0.42) }` over every slice — the unselected ones
+     recede into the scrim and only the centred item reads at full
+     brightness. dimColor is the theme background. */
+  .cv-inner::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: color-mix(in srgb, var(--bg) 42%, transparent);
+  }
+  .cv.on .cv-inner::after { background: transparent; }
   .cv-img {
     display: block;
     width: 100%; height: 100%;
     object-fit: cover;
   }
+  /* bottomChromeHeight: the space reserved below the strip. Reserving it
+     (rather than letting the label size the column) is what makes the strip
+     sit where Omarchy puts it — vertically centred in the height that
+     remains above the chrome — instead of shifting up and down as the label
+     appears and disappears. */
+  #cvchrome {
+    flex: 0 0 auto;
+    height: var(--chrome, 30px);
+    width: 768px;               /* expandedWidth: both lines elide within it */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+  #cvlabel, #cvfilter {
+    width: 100%;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg);
+    text-shadow:
+      -1px -1px 0 var(--outline),  1px -1px 0 var(--outline),
+      -1px  1px 0 var(--outline),  1px  1px 0 var(--outline),
+       0   -1px 0 var(--outline),  0    1px 0 var(--outline),
+      -1px  0   0 var(--outline),  1px  0   0 var(--outline);
+  }
+  #cvlabel {
+    margin-top: 16px;           /* Style.space(16) */
+    font-size: 24px;            /* Style.font.display */
+    font-weight: 600;           /* Font.DemiBold */
+    line-height: 1.15;
+  }
+  #cvfilter {
+    margin-top: 8px;            /* Style.space(8) */
+    font-size: 14px;            /* Style.font.title */
+    opacity: .85;
+  }
+  #cvlabel[hidden], #cvfilter[hidden] { display: none; }
 </style>
 
 <div id="card">
   <div id="hdr"></div>
   <div id="list"></div>
 </div>
-<div id="cv" hidden></div>
+<div id="cv" hidden>
+  <div id="cvstrip"></div>
+  <div id="cvchrome">
+    <div id="cvlabel" hidden></div>
+    <div id="cvfilter" hidden></div>
+  </div>
+</div>
 
 <script>
   const DATA = window.OMAMAC || { theme: {}, font: {}, bg: {}, colors: {} };
@@ -197,44 +281,85 @@
   // root level *is* that Style submenu.
   const ROOT_ICONS = { Theme: "\u{f0e0c}", Font: "\u{e659}", Background: "\u{f03e}" };
 
+  // Geometry constants, ImagePicker.qml (v4.0.2). See the #cv block in
+  // <style> for where each one lands.
+  const EXPANDED_W = 768, SLICE_W = 108, SLICE_SPACING = -30;
+  const STEP = SLICE_W + SLICE_SPACING;   // itemStep
+  const NEARBY = 16;                      // `nearby`: |relativeIndex| <= 16
+
+  // `picker` marks a level as a coverflow AND doubles as the preview kind
+  // the host routes on (omamac preview --theme <name> vs omamac preview
+  // <basename>). `labels` mirrors omarchy-menu-images' --show-labels, which
+  // omarchy-theme-switcher passes and omarchy-theme-bg-switcher does not.
+  // `current` is upstream's --selected: the picker opens ON the active
+  // item rather than at index 0, which matters a great deal once a level
+  // holds 22 themes.
   const LEVELS = {
     root: { crumb: "Go", items: () => ["Theme", "Font", "Background"] },
-    theme: { crumb: "Theme", cmd: "theme", items: () => DATA.theme.options || [] },
-    font: { crumb: "Font", cmd: "font", items: () => DATA.font.options || [] },
-    bg: { crumb: "Background", cmd: "bg", items: () => DATA.bg.options || [] },
+    theme: {
+      crumb: "Theme", cmd: "theme", picker: "theme", labels: true,
+      current: () => DATA.theme.current || "",
+      items: () => DATA.theme.options || [],
+    },
+    font: {
+      crumb: "Font", cmd: "font",
+      current: () => DATA.font.current || "",
+      items: () => DATA.font.options || [],
+    },
+    bg: {
+      crumb: "Background", cmd: "bg", picker: "bg", labels: false,
+      // bg.current is an absolute path; the options are basenames.
+      current: () => String(DATA.bg.current || "").split("/").pop(),
+      items: () => DATA.bg.options || [],
+    },
   };
 
   let level = "root", sel = 0, filter = "";
-  const thumbs = {};                       // basename -> data URI, filled by the host
-  const requested = new Set();             // names already asked for a preview, so
+  // Previews are cached PER KIND, not in one flat map. A theme is
+  // "tokyo-night" and a wallpaper is "tokyo-night-0-swirl.jpg" — close
+  // enough that a future rename could collide, and a preview filed under
+  // the wrong level shows up as the wrong image with nothing logged. The
+  // host echoes the kind back with every thumbnail so this stays exact.
+  const thumbs = { theme: {}, bg: {} };     // kind -> name -> data URI
+  const requested = { theme: new Set(), bg: new Set() };  // names already asked for, so
                                             // render()/omamacSetPreview() re-runs
                                             // never re-send for the same name
-  const attempts = {};                     // basename -> preview requests sent so far,
-                                            // so a wallpaper whose preview keeps coming
-                                            // back empty (still downloading, or genuinely
-                                            // broken — see omamacSetPreview below) gets a
-                                            // bounded retry instead of hammering the host
-                                            // forever.
+  const attempts = { theme: {}, bg: {} };   // kind -> name -> requests sent so far, so an
+                                            // item whose preview keeps coming back empty
+                                            // (still downloading, or genuinely broken —
+                                            // see omamacSetPreview below) gets a bounded
+                                            // retry instead of hammering the host forever.
   const MAX_PREVIEW_ATTEMPTS = 2;
-  const el = { hdr: hdr, list: list, card: card, cv: cv };
+  const el = {
+    hdr: hdr, list: list, card: card,
+    cv: cv, strip: cvstrip, chrome: cvchrome, label: cvlabel, filterLine: cvfilter,
+  };
 
   const visible = () => {
     const L = LEVELS[level], f = filter.toLowerCase();
     return L.items().filter((i) => i.toLowerCase().includes(f));
   };
 
-  // Lazily ask the host for a preview, at most once per name. Shared by
-  // renderList (unused for previews today, since only Background has any)
-  // and renderCoverflow, and guarded on `requested` so a re-render — every
-  // keystroke, every omamacSetPreview callback — never re-sends for a name
-  // that's already in flight. Without this it's O(N^2) sips spawns, several
-  // racing to write the same --out path at once.
-  function requestPreview(name) {
-    if (thumbs[name] || requested.has(name)) return;
-    if ((attempts[name] || 0) >= MAX_PREVIEW_ATTEMPTS) return;
-    attempts[name] = (attempts[name] || 0) + 1;
-    requested.add(name);
-    send({ action: "preview", name });
+  // ImagePickerModel.js's labelForPath, verbatim: drop the extension, turn
+  // -/_ runs into spaces, capitalise each word. "tokyo-night" -> "Tokyo
+  // Night"; a wallpaper "1-sunset-lake.png" -> "1 Sunset Lake".
+  const labelFor = (name) =>
+    String(name || "")
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+
+  // Lazily ask the host for a preview, at most once per name per kind.
+  // Guarded on `requested` so a re-render — every keystroke, every
+  // omamacSetPreview callback — never re-sends for a name that's already in
+  // flight. Without this it's O(N^2) sips spawns, several racing to write
+  // the same --out path at once.
+  function requestPreview(kind, name) {
+    if (thumbs[kind][name] || requested[kind].has(name)) return;
+    if ((attempts[kind][name] || 0) >= MAX_PREVIEW_ATTEMPTS) return;
+    attempts[kind][name] = (attempts[kind][name] || 0) + 1;
+    requested[kind].add(name);
+    send({ action: "preview", name, kind });
   }
 
   function renderList(items) {
@@ -257,15 +382,35 @@
     el.list.children[sel]?.scrollIntoView({ block: "nearest" });
   }
 
-  // Background level only: Omarchy's coverflow (ImagePicker.qml v4.0.2),
-  // not the 300px card — see the #cv rule in <style> for the geometry this
-  // mirrors. Every item gets the same clip-path parallelogram; the selected
-  // one alone expands from a 108x432 slice to the full 768x475 image.
-  function renderCoverflow(items) {
-    el.cv.innerHTML = "";
+  // Omarchy's coverflow (ImagePicker.qml v4.0.2) — see the #cv rules in
+  // <style> for the geometry this mirrors. Every item gets the same
+  // clip-path parallelogram; the selected one alone expands from a 108x432
+  // slice to the full 768x475 image, and everything else is laid out
+  // relative to it.
+  function renderCoverflow(items, kind) {
+    el.strip.innerHTML = "";
+    // clientWidth is 0/undefined until the strip is in the layout (and in
+    // the test DOM shim), so fall back to upstream's own carousel width.
+    const stripW = el.strip.clientWidth || 1782;
+    const previewX = (stripW - EXPANDED_W) / 2;
+
     items.forEach((name, i) => {
+      const rel = i - sel;
+      // `visible: nearby` — upstream renders 16 either side of the
+      // selection and no more, which is what keeps a 22-theme strip from
+      // building (and requesting previews for) items nobody can see.
+      if (Math.abs(rel) > NEARBY) return;
+
       const item = document.createElement("div");
-      item.className = "cv" + (i === sel ? " on" : "");
+      item.className = "cv" + (rel === 0 ? " on" : "");
+      item.style.left = (
+        rel === 0 ? previewX
+        : rel < 0 ? previewX + rel * STEP
+        : previewX + EXPANDED_W + SLICE_SPACING + (rel - 1) * STEP
+      ) + "px";
+      // z: selected 100, the rest fading back with distance so each slice
+      // overlaps the one further from centre.
+      if (rel !== 0) item.style.zIndex = String(50 - Math.min(Math.abs(rel), 40));
 
       // .cv-inner carries the image (or the neutral placeholder, via its
       // own CSS background) clipped inset from .cv's parallelogram by the
@@ -273,24 +418,47 @@
       const inner = document.createElement("div");
       inner.className = "cv-inner";
 
-      if (thumbs[name]) {
+      if (thumbs[kind][name]) {
         const img = document.createElement("img");
         img.className = "cv-img";
-        img.src = thumbs[name];
+        img.src = thumbs[kind][name];
         inner.append(img);
       } else {
         // Neutral placeholder (the .cv-inner background) — never a broken
         // <img>: no src is set until a data URI actually arrives.
-        requestPreview(name);
+        requestPreview(kind, name);
       }
       item.append(inner);
 
       // Matches ImagePicker.qml's MouseArea exactly: clicking the item
       // that's already centred applies it; clicking any other slides it
       // into the centre first, same as Left/Right/Enter would.
-      item.onclick = () => { if (i === sel) choose(); else { sel = i; render(); } };
-      el.cv.append(item);
+      item.onclick = () => { if (rel === 0) choose(); else { sel = i; render(); } };
+      el.strip.append(item);
     });
+  }
+
+  // The chrome under the strip. Upstream's `currentLabel()`: the selected
+  // item's label, or "No matches" when a filter has excluded everything,
+  // or nothing at all when the level is simply empty.
+  function renderChrome(items, L) {
+    const showLabel = !!L.labels;
+    const filtering = filter.length > 0;
+    el.label.hidden = !showLabel;
+    el.filterLine.hidden = !filtering;
+    if (showLabel) {
+      el.label.textContent =
+        items.length ? labelFor(items[sel]) : (filtering ? "No matches" : "");
+    }
+    if (filtering) el.filterLine.textContent = filter;
+    // bottomChromeHeight. Upstream computes this from the --show-labels /
+    // --filterable FLAGS, and omarchy-theme-bg-switcher passes neither — so
+    // its background picker cannot be filtered at all. This menu does let
+    // you filter every level, so the background level's chrome grows to
+    // upstream's filterable-without-labels value only while a filter is
+    // actually typed; with the field empty it is upstream's 30 exactly.
+    el.chrome.style.setProperty(
+      "--chrome", (showLabel ? 104 : (filtering ? 60 : 30)) + "px");
   }
 
   function render() {
@@ -301,44 +469,68 @@
     el.hdr.textContent = filter ? filter : (L.crumb + "…");
     el.hdr.className = filter ? "typed" : "";
 
-    if (level === "bg") {
+    // Each branch clears the OTHER view's contents as well as filling its
+    // own. Hiding a container leaves its children — and their onclick
+    // closures, still bound to the level they were built for — alive in the
+    // DOM; only one of these two views is ever real at a time.
+    if (L.picker) {
       el.card.hidden = true;
       el.cv.hidden = false;
-      renderCoverflow(items);
+      el.list.innerHTML = "";
+      renderCoverflow(items, L.picker);
+      renderChrome(items, L);
     } else {
       el.card.hidden = false;
       el.cv.hidden = true;
+      el.strip.innerHTML = "";
       renderList(items);
     }
   }
 
-  // The host calls this when a thumbnail finishes generating — or, per the
-  // coverflow-picker bug report, with uri === "" when omamac-preview came
-  // back empty (source still downloading, missing, or unreadable). An empty
-  // uri must NOT be cached: `thumbs[name] = ""` would make renderCoverflow's
-  // `if (thumbs[name])` check falsy anyway (so no <img src=""> ever
-  // renders), but it would also satisfy requestPreview's `thumbs[name] ||`
-  // guard as a truthy-looking "already handled" entry via `in`/hasOwnProperty
-  // semantics if that guard ever changed — so just never write it. Instead,
-  // drop `name` from `requested` so the next render() naturally asks again;
-  // requestPreview's own MAX_PREVIEW_ATTEMPTS cap is what stops this from
-  // looping forever on a wallpaper that is never coming.
-  window.omamacSetPreview = (name, uri) => {
+  // The host calls this when a thumbnail finishes generating — or with
+  // uri === "" when omamac-preview came back empty (source still
+  // downloading, missing, or unreadable). An empty uri must NOT be cached:
+  // `thumbs[kind][name] = ""` would make renderCoverflow's truthiness check
+  // falsy anyway (so no <img src=""> ever renders), but it would also
+  // satisfy requestPreview's `thumbs[kind][name] ||` guard as a
+  // truthy-looking "already handled" entry if that guard ever changed — so
+  // just never write it. Instead, drop `name` from `requested` so the next
+  // render() naturally asks again; requestPreview's own
+  // MAX_PREVIEW_ATTEMPTS cap is what stops this from looping forever on an
+  // image that is never coming.
+  //
+  // `kind` defaults to "bg" for the same reason the host defaults it there:
+  // that is what an unqualified preview meant before the Theme level
+  // existed.
+  window.omamacSetPreview = (name, uri, kind) => {
+    const k = kind === "theme" ? "theme" : "bg";
     if (uri) {
-      thumbs[name] = uri;
+      thumbs[k][name] = uri;
     } else {
-      requested.delete(name);
+      requested[k].delete(name);
     }
     render();
   };
+
+  // Entering a level opens ON its current value, the way both Omarchy
+  // switchers pass --selected. At index 0 a 22-theme coverflow would always
+  // open on whatever sorts first rather than on the theme you are actually
+  // running.
+  function enterLevel(next) {
+    level = next;
+    filter = "";
+    const L = LEVELS[level];
+    const at = L.current ? visible().indexOf(L.current()) : -1;
+    sel = at >= 0 ? at : 0;
+    render();
+  }
 
   function choose() {
     const items = visible();
     if (!items.length) return;
     const pick = items[sel];
     if (level === "root") {
-      level = { Theme: "theme", Font: "font", Background: "bg" }[pick];
-      sel = 0; filter = ""; render();
+      enterLevel({ Theme: "theme", Font: "font", Background: "bg" }[pick]);
     } else {
       send({ action: "apply", cmd: LEVELS[level].cmd, arg: pick });
     }
@@ -351,9 +543,9 @@
 
   document.addEventListener("keydown", (e) => {
     const n = visible().length;
-    // Background is a horizontal coverflow, so Left/Right are its natural
-    // selection keys — but Up/Down still work too, same as every other
-    // level, for consistency across the whole menu.
+    // The picker levels are horizontal coverflows, so Left/Right are their
+    // natural selection keys — but Up/Down still work too, same as every
+    // other level, for consistency across the whole menu.
     if (e.key === "ArrowDown" || e.key === "ArrowRight") { sel = n ? (sel + 1) % n : 0; render(); }
     else if (e.key === "ArrowUp" || e.key === "ArrowLeft") { sel = n ? (sel - 1 + n) % n : 0; render(); }
     else if (e.key === "Enter") choose();

@@ -489,4 +489,138 @@ LUAEOF
     "chunks streamed across multiple hs.task.new callback invocations must be concatenated in order, not dropped or reordered"
 }
 
+# The Theme level draws the same coverflow as Background, so both levels send
+# the SAME `preview` action and the host has to route on `kind`. A source grep
+# would not catch a mis-wiring here (both spellings appear in the file either
+# way) — this runs the real onMessage against a task stub that records the
+# argv it was handed, and checks the whole command line, so swapping the two
+# branches, dropping the --theme flag, or defaulting the wrong way all fail.
+test_preview_kind_routes_to_the_right_omamac_subcommand() {
+  local harness="$TMPDIR_TEST/preview_kind_harness.lua"
+  cat > "$harness" <<'LUAEOF'
+package.loaded["hs.ipc"] = {}
+
+local commands = {}
+local evaljs_calls = {}
+
+local function stub_encode(t)
+  if type(t) ~= "table" then
+    error(string.format("incorrect type '%s' for argument 1 (expected table)", type(t)))
+  end
+  local esc = function(s)
+    s = tostring(s):gsub('\\', '\\\\'):gsub('"', '\\"')
+    return '"' .. s .. '"'
+  end
+  local keys = {}
+  for k in pairs(t) do keys[#keys + 1] = k end
+  table.sort(keys)
+  local parts = {}
+  for _, k in ipairs(keys) do
+    parts[#parts + 1] = esc(k) .. ":" .. esc(t[k])
+  end
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local fakeWebview = {}
+fakeWebview.__index = fakeWebview
+function fakeWebview:windowStyle() return self end
+function fakeWebview:allowTextEntry() return self end
+function fakeWebview:transparent() return self end
+function fakeWebview:level() return self end
+function fakeWebview:deleteOnClose() return self end
+function fakeWebview:html() return self end
+function fakeWebview:show() return self end
+function fakeWebview:bringToFront() return self end
+function fakeWebview:hswindow() return nil end
+function fakeWebview:delete() end
+function fakeWebview:evaluateJavaScript(js) table.insert(evaljs_calls, js) end
+
+local capturedCallback = nil
+
+hs = {
+  ipc = {},
+  fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
+  json = { encode = stub_encode },
+  execute = function(cmd) return "" end,
+  hotkey = { bind = function() end },
+  screen = { mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end },
+  webview = {
+    usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
+    new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
+  },
+  drawing = { windowLevels = { modalPanel = 1 } },
+  alert = { show = function() end },
+  task = {
+    -- args is { "-c", "<the whole shell command>" }; record that command.
+    new = function(path, doneCb, streamCb, args)
+      return {
+        start = function()
+          table.insert(commands, tostring(args and args[2] or ""))
+          doneCb(0, "data:image/jpeg;base64,ZZZZ", "")
+        end,
+      }
+    end,
+  },
+}
+
+local hostPath = os.getenv("HAMMERSPOON_HOST")
+local ok, err = pcall(dofile, hostPath)
+if not ok then
+  error("failed to load " .. tostring(hostPath) .. " under stubs: " .. tostring(err))
+end
+
+OmamacMenu.open()
+if not capturedCallback then
+  error("openMenu() never registered a message callback via ucc:setCallback")
+end
+
+capturedCallback({ body = { action = "preview", name = "tokyo-night", kind = "theme" } })
+capturedCallback({ body = { action = "preview", name = "dawn.jpg", kind = "bg" } })
+-- No kind at all must keep the historical meaning: a wallpaper.
+capturedCallback({ body = { action = "preview", name = "legacy.jpg" } })
+
+-- io.write, not print: under `nvim --headless` (helpers.sh's last-resort Lua
+-- front-end) print() goes through Vim's message system, which merged two of
+-- these long lines into one and made a passing assertion look like a failure.
+-- io.write goes straight to stdout, byte for byte.
+io.write("KIND_RESULT_START\n")
+for i, c in ipairs(commands) do io.write("cmd" .. i .. "=" .. c .. "\n") end
+for i, j in ipairs(evaljs_calls) do io.write("js" .. i .. "=" .. j .. "\n") end
+io.write("KIND_RESULT_END\n")
+LUAEOF
+
+  local out rc
+  out=$(OMAMAC_DIR="$OMAMAC_ROOT" HAMMERSPOON_HOST="$HOST" lua_run "$harness" 2>&1); rc=$?
+  if [ "$rc" -eq 127 ]; then
+    fail "no executing Lua interpreter available — cannot verify preview kind routing"
+    return
+  fi
+  assert_eq 0 "$rc" "preview-kind harness must run cleanly, got: $out"
+  [ "$rc" -eq 0 ] || return
+
+  # Asserted against the whole captured blob with the NAME baked into every
+  # pattern, so each check stays bound to the one message it is about — a
+  # branch swap flips "--theme" onto the wrong name and fails, rather than
+  # merely moving a matching substring elsewhere in the output.
+  assert_contains "$out" "'preview' '--theme' 'tokyo-night'" \
+    "kind=theme must invoke: omamac preview --theme <name>"
+  assert_contains "$out" "'preview' 'dawn.jpg'" \
+    "kind=bg must invoke the wallpaper form: omamac preview <basename>"
+  case "$out" in *"'--theme' 'dawn.jpg'"*) fail "kind=bg must NOT pass --theme" ;; esac
+  assert_contains "$out" "'preview' 'legacy.jpg'" \
+    "a message with no kind must keep meaning a wallpaper"
+  case "$out" in *"'--theme' 'legacy.jpg'"*) fail "a kindless message must NOT pass --theme" ;; esac
+
+  # And the kind must come back out to the page, or an arriving thumbnail
+  # cannot be filed against the level that asked for it. The stub encoder
+  # sorts keys, so kind and name land adjacent and can be asserted together
+  # — a kind echoed against the wrong name will not match.
+  assert_contains "$out" '"kind":"theme","name":"tokyo-night"' \
+    "the theme kind must be echoed back to the page, bound to the theme name"
+  assert_contains "$out" '"kind":"bg","name":"dawn.jpg"' \
+    "the bg kind must be echoed back to the page, bound to the wallpaper name"
+  assert_contains "$out" '"kind":"bg","name":"legacy.jpg"' \
+    "a kindless request must be echoed back as bg"
+}
+
 run_tests

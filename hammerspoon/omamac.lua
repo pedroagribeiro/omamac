@@ -71,14 +71,22 @@ end
 -- Builds the JS the host pushes into the page to deliver a generated
 -- thumbnail. `hs.json.encode` only accepts a TABLE (a bare string raises
 -- "incorrect type 'string' for argument 1 (expected table)") — so this
--- encodes ONE table holding both `name` and `uri` and destructures it on
+-- encodes ONE table holding `name`, `uri` and `kind` and destructures it on
 -- the JS side, rather than encoding each string separately at the call
 -- site. That also gets the data: URI safely escaped for embedding in JS.
+--
+-- `kind` ("theme" or "bg") rides along because the page now has TWO picker
+-- levels drawing previews, and it caches them in per-kind maps. Echoing the
+-- kind back is what lets an arriving thumbnail land in the right one: the
+-- name alone is ambiguous (a theme is "tokyo-night", a wallpaper is
+-- "tokyo-night-0-swirl.jpg" — close enough that a future rename could
+-- collide, and a silently mis-filed preview is invisible until the wrong
+-- image shows up).
 -- Pure aside from the encode call itself, so it can be exercised under a
 -- plain Lua interpreter with a stub hs.json.encode — no webview needed.
-local function previewScript(name, uri)
-  local payload = hs.json.encode({ name = name, uri = uri })
-  return "(function(p){window.omamacSetPreview(p.name,p.uri)})(" .. payload .. ")"
+local function previewScript(name, uri, kind)
+  local payload = hs.json.encode({ name = name, uri = uri, kind = kind or "bg" })
+  return "(function(p){window.omamacSetPreview(p.name,p.uri,p.kind)})(" .. payload .. ")"
 end
 
 local function onMessage(message)
@@ -89,7 +97,16 @@ local function onMessage(message)
     runAsync({ b.cmd, b.arg })          -- async: never block the UI on a switch
   elseif b.action == "preview" and b.name then
     local wv = menuWV
-    runAsync({ "preview", b.name }, function(_, stdout)
+    -- Two preview sources behind one page message. "bg" is the default so an
+    -- older page (or any message without a kind) keeps its exact previous
+    -- meaning: a wallpaper of the CURRENT theme. "theme" instead asks for a
+    -- named theme's own preview shot, which omamac fetches from upstream on
+    -- demand — a theme other than the current one has nothing cached locally,
+    -- which is the whole point of a theme picker.
+    local kind = (b.kind == "theme") and "theme" or "bg"
+    local args = (kind == "theme") and { "preview", "--theme", b.name }
+                                    or { "preview", b.name }
+    runAsync(args, function(_, stdout)
       stdout = (stdout or ""):gsub("%s+$", "")
       -- Compare IDENTITY, not truthiness. `wv` was captured while the menu was
       -- open, so it is always non-nil here and a bare `and wv` guards nothing.
@@ -113,7 +130,7 @@ local function onMessage(message)
         -- failure, with the name, so a future break here is loud instead of
         -- silent.
         local ok, err = pcall(function()
-          wv:evaluateJavaScript(previewScript(b.name, stdout))
+          wv:evaluateJavaScript(previewScript(b.name, stdout, kind))
         end)
         if not ok then
           print(string.format("omamac: preview push failed for %s: %s", tostring(b.name), tostring(err)))

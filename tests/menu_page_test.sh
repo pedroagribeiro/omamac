@@ -48,10 +48,12 @@ test_enter_on_a_theme_posts_an_apply_bound_to_that_theme() {
     fail "no JS engine available to drive menu.html — cannot verify the page"
     return
   fi
-  # sel resets to 0 after the root->submenu transition, so "gruvbox" (index 0
-  # of theme.options) is what the second Enter must select. Root -> Theme is
-  # the first Enter; select is the second.
-  local data='{"theme":{"current":"nord","options":["gruvbox","nord"]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
+  # Entering a level selects that level's CURRENT value, the way both Omarchy
+  # switchers pass --selected to omarchy-menu-images. theme.current is "nord"
+  # — the SECOND option — so the second Enter must apply "nord", not the
+  # first option. Fixture deliberately puts "nord" neither first nor last, so
+  # neither an index-0 nor an index-(n-1) default could pass by accident.
+  local data='{"theme":{"current":"nord","options":["gruvbox","nord","rose-pine"]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "enter-enter")
   local msg; msg=$(printf '%s' "$out" | jq -c '.[-1]')
   # Assert action, cmd AND arg together, on the SAME message — not just that
@@ -59,7 +61,7 @@ test_enter_on_a_theme_posts_an_apply_bound_to_that_theme() {
   # makes an apply/preview action-string swap impossible to slip through:
   # a swap still contains every substring, it just binds them to the wrong
   # message.
-  assert_eq '{"action":"apply","cmd":"theme","arg":"gruvbox"}' "$msg"
+  assert_eq '{"action":"apply","cmd":"theme","arg":"nord"}' "$msg"
 }
 
 test_escape_at_root_posts_close() {
@@ -148,6 +150,120 @@ test_empty_preview_permits_one_retry_then_gives_up() {
   assert_eq 2 "$previews" "an empty preview must permit exactly one retry (2 requests total), then stop"
   local has_img; has_img=$(printf '%s' "$out" | jq -r '.hasImg')
   assert_eq "false" "$has_img" "an empty preview must never be cached/rendered as a broken <img>; the placeholder must remain"
+}
+
+
+# ---------------------------------------------------------------------------
+# The Theme level is a coverflow, not a list.
+#
+# Upstream, Theme and Background are the SAME picker: both switchers shell
+# out to omarchy-menu-images, and omarchy.image-picker's manifest calls
+# itself the "Image-grid selector overlay used for wallpapers, themes, and
+# any other directory of images". The only difference is the flags —
+# omarchy-theme-switcher adds --show-labels --filterable, which is what puts
+# the theme name (and the typed filter) under the strip.
+# ---------------------------------------------------------------------------
+
+test_theme_level_renders_the_coverflow_and_not_the_list() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"nord","options":["gruvbox","nord","rose-pine"]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "theme-open-and-report")
+
+  assert_eq "true"  "$(printf '%s' "$out" | jq -r '.cardHidden')" "the 300px card must be hidden at the Theme level"
+  assert_eq "false" "$(printf '%s' "$out" | jq -r '.cvHidden')"   "the picker overlay must be shown at the Theme level"
+  assert_eq 3 "$(printf '%s' "$out" | jq '.strip.count')" "every theme must get a coverflow item"
+  # The dull list is what this replaces: if renderList still ran for this
+  # level the rows would be sitting in #list.
+  assert_eq 0 "$(printf '%s' "$out" | jq '.strip.listCount')" "the Theme level must not also populate the flat list"
+  # ...opened on the CURRENT theme (index 1 of three), not index 0.
+  assert_eq 1 "$(printf '%s' "$out" | jq '.strip.selectedIndex')" "the coverflow must open on the current theme"
+}
+
+test_theme_level_requests_a_preview_per_theme_with_the_theme_kind() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"nord","options":["gruvbox","nord","rose-pine"]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "theme-open-and-report")
+  # kind asserted TOGETHER with the name on each message: the host routes on
+  # it (kind=theme -> `omamac preview --theme <name>`), so a request that
+  # carried the right names with the wrong kind would silently look up
+  # wallpapers of the current theme and come back empty for all three.
+  local previews; previews=$(printf '%s' "$out" | jq -c '[.messages[] | select(.action == "preview") | {name, kind}] | sort_by(.name)')
+  assert_eq '[{"name":"gruvbox","kind":"theme"},{"name":"nord","kind":"theme"},{"name":"rose-pine","kind":"theme"}]' \
+    "$previews" "each theme must be previewed once, as kind=theme"
+}
+
+test_theme_level_labels_the_selected_theme_omarchy_style() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # ImagePickerModel.labelForPath: extension stripped, -/_ runs to spaces,
+  # each word capitalised. "tokyo-night" -> "Tokyo Night".
+  local data='{"theme":{"current":"tokyo-night","options":["gruvbox","tokyo-night"]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "theme-open-and-report")
+  assert_eq "Tokyo Night" "$(printf '%s' "$out" | jq -r '.labelText')" \
+    "the label must be the SELECTED theme's name, title-cased like Omarchy's labelForPath"
+  assert_eq "false" "$(printf '%s' "$out" | jq -r '.labelHidden')" "--show-labels: the Theme level must show a label"
+  # bottomChromeHeight with showLabels && filterable.
+  assert_eq "104px" "$(printf '%s' "$out" | jq -r '.chrome')" "the Theme level reserves Omarchy's labelled chrome height"
+}
+
+test_background_level_has_no_label_matching_the_upstream_switcher() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # omarchy-theme-bg-switcher passes NEITHER --show-labels nor --filterable,
+  # so its picker is a bare strip with 30px of chrome under it. The Theme
+  # level's label must not leak across to it.
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":["dawn.jpg","sunset.jpg"]},"colors":{}}'
+  local out; out=$(run_driver "$data" "bg-select-apply")
+  assert_eq '{"action":"apply","cmd":"bg","arg":"sunset.jpg"}' "$(printf '%s' "$out" | jq -c '.[-1]')"
+}
+
+test_theme_filter_with_no_match_shows_omarchys_no_matches_label() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # currentLabel(): with a filter typed and nothing matching, upstream shows
+  # "No matches" rather than a stale name or an empty line.
+  local data='{"theme":{"current":"nord","options":["gruvbox","nord"]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "theme-filter-no-match")
+  assert_eq 0 "$(printf '%s' "$out" | jq '.strip.count')" "a filter matching nothing must empty the strip"
+  assert_eq "No matches" "$(printf '%s' "$out" | jq -r '.labelText')"
+  # --filterable: what was typed is echoed under the label, since the card
+  # (and its header) is hidden at picker levels — without this the strip
+  # would change with no visible reason.
+  assert_eq "zz" "$(printf '%s' "$out" | jq -r '.filterText')"
+  assert_eq "false" "$(printf '%s' "$out" | jq -r '.filterHidden')"
+}
+
+test_theme_previews_are_not_confused_with_background_previews() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # Both picker levels cache previews by name, so the caches must be keyed by
+  # kind as well — the host echoes the kind back with every push precisely so
+  # a theme and a wallpaper sharing a name cannot share a thumbnail. Here the
+  # host answers the Theme level's request with a bg-kinded push for the same
+  # name: the theme item must still be showing its placeholder.
+  local data='{"theme":{"current":"nord","options":["nord"]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "theme-misdelivered-preview")
+  assert_eq 1 "$(printf '%s' "$out" | jq '.strip.count')"
+  assert_eq 0 "$(printf '%s' "$out" | jq '.strip.withImages')" \
+    "a preview pushed under the wrong kind must never be rendered into the Theme coverflow"
+  # ...and the correctly-kinded push right after it must land, so this is
+  # proving the cache is KEYED by kind, not that pushes are being dropped.
+  assert_eq 1 "$(printf '%s' "$out" | jq '.strip.withImagesAfterCorrectPush')" \
+    "a correctly-kinded push must still reach the Theme coverflow"
 }
 
 run_tests

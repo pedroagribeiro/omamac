@@ -19,7 +19,7 @@ omamac <command> [args]
   font [name|--list|--current]
   bg [file|--next|--list|--current]
   menu-data
-  preview <wallpaper>
+  preview <wallpaper>|--theme <name>
 EOF
 }
 

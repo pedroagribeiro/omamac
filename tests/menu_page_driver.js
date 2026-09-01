@@ -49,7 +49,12 @@ function makeElement() {
     textContent: '',
     value: '',
     src: '',
+    hidden: false,
     onclick: null,
+    // The coverflow sets style.left / style.zIndex per item and
+    // style.setProperty('--chrome', ...) on the chrome block; record both so
+    // a scenario can assert on them.
+    style: { _props: {}, setProperty(k, v) { this._props[k] = v; } },
     _children: [],
     _listeners: {},
     append() { el._children.push(...arguments); },
@@ -68,22 +73,31 @@ function makeElement() {
   return el;
 }
 
-// The page reads #hdr, #list, #card and #cv as bare globals — the way a
-// browser exposes elements with an id attribute — so these must exist as
-// globals before the page script runs, not just be reachable via
-// getElementById. #card is the 300px root/theme/font menu; #cv is the
-// Background-level coverflow strip — the page toggles `.hidden` on
-// whichever one isn't showing. There is no #filter element any more: the
-// header line (#hdr) doubles as the search display, so the page never
-// calls document.getElementById.
+// The page reads its elements as bare globals — the way a browser exposes
+// elements with an id attribute — so these must exist before the page
+// script runs, not just be reachable via getElementById. #card is the 300px
+// root/font menu; #cv is the picker overlay used by BOTH the Theme and
+// Background levels, holding the coverflow strip (#cvstrip) and the chrome
+// under it (#cvchrome > #cvlabel, #cvfilter). The page toggles `.hidden` on
+// whichever of #card/#cv isn't showing. There is no #filter element: the
+// header line (#hdr) doubles as the search display for the card levels, so
+// the page never calls document.getElementById.
 const hdrEl = makeElement();
 const listEl = makeElement();
 const cardEl = makeElement();
 const cvEl = makeElement();
+const stripEl = makeElement();
+const chromeEl = makeElement();
+const labelEl = makeElement();
+const filterEl = makeElement();
 global.hdr = hdrEl;
 global.list = listEl;
 global.card = cardEl;
 global.cv = cvEl;
+global.cvstrip = stripEl;
+global.cvchrome = chromeEl;
+global.cvlabel = labelEl;
+global.cvfilter = filterEl;
 
 const documentListeners = {};
 global.document = {
@@ -129,6 +143,23 @@ function fireKey(key) {
   handler({ key, preventDefault() {} });
 }
 
+let misdeliveredReport = null;
+
+// Walks the coverflow strip and reports what a viewer would actually see:
+// which item carries the selected class, and whether an <img> was appended
+// (item -> .cv-inner -> img.cv-img).
+function stripReport() {
+  const items = stripEl.children;
+  return {
+    count: items.length,
+    selectedIndex: items.findIndex((it) => /(^| )on( |$)/.test(it.className)),
+    withImages: items.filter((it) =>
+      (it.children || []).some((inner) =>
+        (inner.children || []).some((c) => c.className === 'cv-img'))).length,
+    listCount: listEl.children.length,
+  };
+}
+
 switch (scenario) {
   case 'enter-enter':
     fireKey('Enter');
@@ -156,6 +187,29 @@ switch (scenario) {
     fireKey('h');
     fireKey('e');
     break;
+  case 'theme-select-apply':
+    fireKey('Enter');      // root -> Theme (the coverflow)
+    fireKey('ArrowRight'); // move one along, coverflow-style
+    fireKey('Enter');      // apply whatever that leaves selected
+    break;
+  case 'theme-open-and-report':
+    fireKey('Enter');      // root -> Theme
+    break;
+  case 'theme-filter-no-match':
+    fireKey('Enter');      // root -> Theme
+    fireKey('z');          // matches nothing
+    fireKey('z');
+    break;
+  case 'theme-misdelivered-preview':
+    fireKey('Enter');      // root -> Theme; requests a preview for "nord"
+    // The host answering with the WRONG kind for that same name. Nothing in
+    // the message distinguishes it except `kind`, which is exactly the point.
+    global.window.omamacSetPreview('nord', 'data:image/jpeg;base64,WRONG', 'bg');
+    misdeliveredReport = stripReport();
+    // ...then the correct one, so the assertion below can tell "keyed by
+    // kind" apart from "pushes are being dropped".
+    global.window.omamacSetPreview('nord', 'data:image/jpeg;base64,RIGHT', 'theme');
+    break;
   case 'bg-empty-preview-retry-cap':
     fireKey('ArrowDown'); // root: Theme -> Font
     fireKey('ArrowDown'); // root: Font -> Background
@@ -170,7 +224,27 @@ switch (scenario) {
     process.exit(1);
 }
 
-if (scenario === 'type-then-report') {
+if (scenario === 'theme-misdelivered-preview') {
+  process.stdout.write(JSON.stringify({
+    messages,
+    strip: {
+      ...misdeliveredReport,
+      withImagesAfterCorrectPush: stripReport().withImages,
+    },
+  }));
+} else if (scenario === 'theme-open-and-report' || scenario === 'theme-filter-no-match') {
+  process.stdout.write(JSON.stringify({
+    messages,
+    strip: stripReport(),
+    cardHidden: cardEl.hidden,
+    cvHidden: cvEl.hidden,
+    labelText: labelEl.textContent,
+    labelHidden: labelEl.hidden,
+    filterText: filterEl.textContent,
+    filterHidden: filterEl.hidden,
+    chrome: chromeEl.style._props['--chrome'],
+  }));
+} else if (scenario === 'type-then-report') {
   process.stdout.write(JSON.stringify({
     messages,
     headText: hdrEl.textContent,
@@ -183,7 +257,7 @@ if (scenario === 'type-then-report') {
   // The image lives inside a .cv-inner wrapper (item -> .cv-inner -> img),
   // one level deeper than .cv itself — see .cv-inner in <style> and its
   // construction in renderCoverflow.
-  const hasImg = cvEl.children.some((item) =>
+  const hasImg = stripEl.children.some((item) =>
     (item.children || []).some((inner) =>
       (inner.children || []).some((c) => c.className === 'cv-img')));
   process.stdout.write(JSON.stringify({ messages, hasImg }));

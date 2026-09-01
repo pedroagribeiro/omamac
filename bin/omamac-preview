@@ -1,33 +1,74 @@
 #!/usr/bin/env bash
-# omamac-preview <wallpaper-basename> — data URI for the menu's preview pane.
+# omamac-preview <wallpaper-basename>   — data URI for one of the current
+#                                         theme's cached wallpapers
+# omamac-preview --theme <theme-name>   — data URI for a theme's preview shot
 set -uo pipefail
 OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "${OMAMAC_DIR}/lib/state.sh"
+source "${OMAMAC_DIR}/lib/fetch.sh"
 SIPS="${OMAMAC_SIPS:-sips}"
+THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
 
 # The menu calls this speculatively for every visible row, so every failure
 # here is a quiet no-output exit 0 — never an error.
 [ $# -ge 1 ] || exit 0
+
+# Convert <source-image> -> cached JPEG thumbnail and print it as a data URI.
+# Shared by both modes; prints nothing and returns 0 on any failure.
+emit_thumb() {
+  local src="$1" thumb="$2"
+  [ -f "$src" ] || return 0
+  mkdir -p "$(dirname "$thumb")"
+  if [ ! -f "$thumb" ] || [ "$src" -nt "$thumb" ]; then
+    # 1024, not 600: the menu's picker levels expand the selected item to
+    # 768px wide (Omarchy's coverflow expandedWidth) — 600 upscales into that
+    # and looks soft. Measured cost of the bump is negligible: ~0.05s either
+    # way against a real 4096x2428 source (see tests/preview_test.sh and the
+    # coverflow report for the numbers).
+    if ! "$SIPS" -s format jpeg -Z 1024 "$src" --out "$thumb" >/dev/null 2>&1; then
+      # sips creates --out before it knows the conversion failed. Drop the stub,
+      # or the [ -f "$thumb" ] check above serves it forever as a malformed
+      # "success" — the same trap lib/fetch.sh already guards for curl.
+      rm -f "$thumb"
+      return 0
+    fi
+  fi
+  printf 'data:image/jpeg;base64,%s\n' "$(base64 -i "$thumb" | tr -d '\n')"
+}
+
+if [ "$1" = "--theme" ]; then
+  name="${2:-}"
+  [ -n "$name" ] || exit 0
+
+  # The theme name is the ONE preview input omamac did not produce itself — it
+  # comes from the menu page — and it is interpolated into both an upstream URL
+  # and a cache path. Two independent guards, because they answer different
+  # questions: the first rejects anything that is not a bare path component
+  # (so "../x" can never escape either tree, however the second guard is later
+  # relaxed), the second requires the theme to be one omamac actually vendors
+  # (so a typo cannot spend a network round-trip on a 404).
+  case "$name" in
+    */*|.*|"") exit 0 ;;
+  esac
+  [ -f "${THEMES_DIR}/${name}/colors.toml" ] || exit 0
+
+  # Omarchy's own theme switcher (bin/omarchy-theme-switcher) builds its
+  # picker from themes/<name>/preview.{png,jpg,...} — a full desktop
+  # screenshot of the theme in use — falling back to the theme's first
+  # background only when no preview file exists. Every stock theme at v4.0.2
+  # ships preview.png, so that is the single file fetched here.
+  src="${OMAMAC_CACHE}/theme-previews/${name}.png"
+  if [ ! -f "$src" ]; then
+    # Unlike wallpapers there is no bulk prefetch: 22 themes x ~400KB is not
+    # worth downloading until the Theme level is actually opened, and each
+    # item is requested independently by the page, so these run concurrently
+    # and are cached from then on.
+    omamac_fetch_atomic "$(omamac_omarchy_url "$name" preview.png)" "$src" || exit 0
+  fi
+  emit_thumb "$src" "${OMAMAC_CACHE}/theme-thumbs/${name}.jpg"
+  exit 0
+fi
+
 theme=$(omamac_state_get theme.name)
 [ -n "$theme" ] || exit 0
-src="${OMAMAC_CACHE}/backgrounds/${theme}/$1"
-[ -f "$src" ] || exit 0
-
-thumbs="${OMAMAC_CACHE}/thumbs/${theme}"
-mkdir -p "$thumbs"
-thumb="${thumbs}/$1.jpg"
-if [ ! -f "$thumb" ] || [ "$src" -nt "$thumb" ]; then
-  # 1024, not 600: the menu's Background level expands the selected item to
-  # 768px wide (Omarchy's coverflow expandedWidth) — 600 upscales into that
-  # and looks soft. Measured cost of the bump is negligible: ~0.05s either
-  # way against a real 4096x2428 source (see tests/preview_test.sh and the
-  # coverflow report for the numbers).
-  if ! "$SIPS" -s format jpeg -Z 1024 "$src" --out "$thumb" >/dev/null 2>&1; then
-    # sips creates --out before it knows the conversion failed. Drop the stub, or
-    # the [ -f "$thumb" ] check above serves it forever as a malformed "success"
-    # — the same trap bin/omamac-bg already guards for curl.
-    rm -f "$thumb"
-    exit 0
-  fi
-fi
-printf 'data:image/jpeg;base64,%s\n' "$(base64 -i "$thumb" | tr -d '\n')"
+emit_thumb "${OMAMAC_CACHE}/backgrounds/${theme}/$1" "${OMAMAC_CACHE}/thumbs/${theme}/$1.jpg"
