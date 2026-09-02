@@ -51,7 +51,7 @@ cached under `~/.cache/omamac`, so the first open of a picker needs network.
 ### Homebrew
 
 ```bash
-git clone https://github.com/<you>/omamac.git ~/personal/omamac
+git clone https://github.com/pedroagribeiro/omamac.git ~/personal/omamac
 cd ~/personal/omamac
 ./install
 ```
@@ -70,7 +70,7 @@ prompts (System Settings → Privacy & Security → Accessibility), and press
 Add the input:
 
 ```nix
-inputs.omamac.url = "github:<you>/omamac";
+inputs.omamac.url = "github:pedroagribeiro/omamac";
 ```
 
 `packages.default` puts `omamac` on `PATH`, wrapped with the tools it needs.
