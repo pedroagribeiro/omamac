@@ -302,10 +302,10 @@
   // (omarchy-display-text-size), not a menu entry — so U+F034, fa-text-height,
   // is a choice rather than a port. It was picked by parsing the Nerd Font's
   // cmap rather than assumed present: it lives in the same Font Awesome block
-  // as the Background glyph above, which already renders here.
-  const ROOT_ICONS = {
-    Theme: "\u{f0e0c}", Font: "\u{e659}", Size: "\u{f034}", Background: "\u{f03e}",
-  };
+  // as the Background glyph, which already renders here.
+  const ROOT_ICONS = { Theme: "\u{f0e0c}", Font: "\u{e659}", Background: "\u{f03e}" };
+  // Inside Font. Family reuses the Font glyph; Size is U+F034, fa-text-height.
+  const FONT_MENU_ICONS = { Family: "\u{e659}", Size: "\u{f034}" };
 
   // Font is not a picker upstream, it is a menu PROVIDER — omarchy-menu.jsonc
   // gives Theme and Background an `action:` that launches the image picker,
@@ -374,43 +374,58 @@
   // `current` is upstream's --selected: the picker opens ON the active
   // item rather than at index 0, which matters a great deal once a level
   // holds 22 themes.
+  // Every level names its `parent`, so Escape walks back up one step rather
+  // than always jumping to the root — which only worked while the menu was
+  // exactly two deep.
+  //
+  // Font is a submenu, not a list: size is a property OF the font, not a peer
+  // of Theme and Background, so it lives under Font rather than beside it.
+  // Omarchy nests the same way where it has a settings group with more than
+  // one knob (style.bar -> Position -> Top/Bottom).
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Font", "Size", "Background"],
+      items: () => ["Theme", "Font", "Background"],
       icon: (name) => ROOT_ICONS[name] || "",
+      into: { Theme: "theme", Font: "font", Background: "bg" },
     },
-    // `width` follows Menu.qml:111, which gives style.font (and the
-    // screen-record menu, which omamac has no equivalent of) 520 and every
-    // other card 300.
     theme: {
-      crumb: "Theme", cmd: "theme", picker: "theme", labels: true,
+      crumb: "Theme", cmd: "theme", picker: "theme", labels: true, parent: "root",
       current: () => DATA.theme.current || "",
       items: () => DATA.theme.options || [],
     },
     font: {
-      crumb: "Font", cmd: "font",
+      crumb: "Font", parent: "root",
+      items: () => ["Family", "Size"],
+      icon: (name) => FONT_MENU_ICONS[name] || "",
+      into: { Family: "fontfamily", Size: "fontsize" },
+    },
+    // `width` follows Menu.qml:111, which gives style.font (and the
+    // screen-record menu, which omamac has no equivalent of) 520 and every
+    // other card 300. Family names are what need that room.
+    fontfamily: {
+      crumb: "Family", cmd: "font", parent: "font",
       current: () => DATA.font.current || "",
       items: () => DATA.font.options || [],
       icon: (name) =>
-        name === (DATA.font.current || "") ? CURRENT_MARK : ROOT_ICONS.Font,
+        name === (DATA.font.current || "") ? CURRENT_MARK : FONT_MENU_ICONS.Family,
       width: 520,
       // Deliberate deviation — see ROWS above.
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
     // Ghostty points, shown exactly as they are written to the config. Same
-    // provider-row treatment as Font — a glyph per row, a check on the active
-    // one — since it is the same kind of list.
+    // provider-row treatment as Family — a glyph per row, a check on the
+    // active one — since it is the same kind of list.
     fontsize: {
-      crumb: "Size", cmd: "font-size",
+      crumb: "Size", cmd: "font-size", parent: "font",
       current: () => String(DATA.fontSize?.current || ""),
       items: () => DATA.fontSize?.options || [],
       icon: (name) =>
-        name === String(DATA.fontSize?.current || "") ? CURRENT_MARK : ROOT_ICONS.Size,
+        name === String(DATA.fontSize?.current || "") ? CURRENT_MARK : FONT_MENU_ICONS.Size,
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
     bg: {
-      crumb: "Background", cmd: "bg", picker: "bg", labels: false,
+      crumb: "Background", cmd: "bg", picker: "bg", labels: false, parent: "root",
       // bg.current is an absolute path; the options are basenames.
       current: () => String(DATA.bg.current || "").split("/").pop(),
       items: () => DATA.bg.options || [],
@@ -626,16 +641,29 @@
     const items = visible();
     if (!items.length) return;
     const pick = items[sel];
-    if (level === "root") {
-      enterLevel({ Theme: "theme", Font: "font", Size: "fontsize", Background: "bg" }[pick]);
+    // A level with `into` is a submenu: its rows drill down. Anything else
+    // applies the picked value through that level's command.
+    const into = LEVELS[level].into;
+    if (into) {
+      enterLevel(into[pick]);
     } else {
       send({ action: "apply", cmd: LEVELS[level].cmd, arg: pick });
     }
   }
 
   function back() {
-    if (level === "root") return send({ action: "close" });
-    level = "root"; sel = 0; filter = ""; render();
+    const parent = LEVELS[level].parent;
+    if (!parent) return send({ action: "close" });
+    // Land back on the row that was drilled into, not at the top of the
+    // parent — Escape out of Size should leave Size highlighted under Font.
+    const from = level;
+    level = parent;
+    filter = "";
+    const rows = visible();
+    const into = LEVELS[level].into || {};
+    const at = rows.findIndex((r) => into[r] === from);
+    sel = at >= 0 ? at : 0;
+    render();
   }
 
   document.addEventListener("keydown", (e) => {

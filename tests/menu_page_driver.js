@@ -171,16 +171,14 @@ switch (scenario) {
     break;
   case 'bg-render-thrice':
     fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Size
-    fireKey('ArrowDown'); // root: Size -> Background
+    fireKey('ArrowDown'); // root: Font -> Background
     fireKey('Enter');     // enter Background — first render() call
     fireKey('ArrowDown'); // second render() call, no thumbs supplied meanwhile
     fireKey('ArrowDown'); // third render() call, ditto
     break;
   case 'bg-select-apply':
     fireKey('ArrowDown');  // root: Theme -> Font
-    fireKey('ArrowDown');  // root: Font -> Size
-    fireKey('ArrowDown');  // root: Size -> Background
+    fireKey('ArrowDown');  // root: Font -> Background
     fireKey('Enter');      // enter Background (coverflow), sel resets to 0
     fireKey('ArrowRight'); // move selection to the second item, coverflow-style
     fireKey('Enter');      // apply the now-selected (second) item
@@ -192,21 +190,35 @@ switch (scenario) {
     break;
   case 'root-report':
     break;              // report the root level exactly as first rendered
+  case 'font-menu-report':
+    fireKey('ArrowDown'); // root: Theme -> Font
+    fireKey('Enter');     // enter Font — a submenu of Family and Size
+    break;
   case 'font-open-and-report':
     fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('Enter');     // enter Font (a list, not a coverflow)
+    fireKey('Enter');     // enter Font
+    fireKey('Enter');     // Family (row 0) -> the family list
     break;
   case 'size-open-and-report':
     fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Size
-    fireKey('Enter');     // enter Size (a list, like Font)
+    fireKey('Enter');     // enter Font
+    fireKey('ArrowDown'); // Family -> Size
+    fireKey('Enter');     // enter Size
     break;
   case 'size-select-apply':
     fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Size
+    fireKey('Enter');     // enter Font
+    fireKey('ArrowDown'); // Family -> Size
     fireKey('Enter');     // enter Size, landing on the current size
     fireKey('ArrowDown'); // one size up
     fireKey('Enter');     // apply it
+    break;
+  case 'size-then-escape':
+    fireKey('ArrowDown'); // root: Theme -> Font
+    fireKey('Enter');     // enter Font
+    fireKey('ArrowDown'); // Family -> Size
+    fireKey('Enter');     // enter Size
+    fireKey('Escape');    // back out — must land on Font, ON the Size row
     break;
   case 'theme-select-apply':
     fireKey('Enter');      // root -> Theme (the coverflow)
@@ -233,8 +245,7 @@ switch (scenario) {
     break;
   case 'bg-unavailable-preview':
     fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Size
-    fireKey('ArrowDown'); // root: Size -> Background
+    fireKey('ArrowDown'); // root: Font -> Background
     fireKey('Enter');     // enter Background — one bulk request for the level
     // The host reporting that this item has no readable thumbnail. It must
     // not be cached (an empty src renders as a broken image) and it must not
@@ -260,8 +271,8 @@ function listReport() {
   });
 }
 
-if (scenario === 'font-open-and-report' || scenario === 'root-report'
-    || scenario === 'size-open-and-report') {
+if (['font-open-and-report', 'root-report', 'size-open-and-report',
+     'font-menu-report', 'size-then-escape'].includes(scenario)) {
   process.stdout.write(JSON.stringify({
     messages,
     list: listReport(),

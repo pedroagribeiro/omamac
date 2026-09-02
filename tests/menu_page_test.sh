@@ -332,11 +332,8 @@ test_root_rows_keep_their_own_icons() {
   # from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  # Theme/Font/Background are verbatim from omarchy-menu.jsonc; Size (U+F034,
-  # fa-text-height) has no upstream counterpart and was verified present by
-  # parsing the Nerd Font's cmap rather than assumed.
-  assert_eq '["\udb83\ude0c","\ue659","\uf034","\uf03e"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
-    "root must keep its four glyphs"
+  assert_eq '["\udb83\ude0c","\ue659","\uf03e"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root must keep the Theme/Font/Background glyphs from omarchy-menu.jsonc"
 }
 
 # The Font menu is WIDER than every other card. Menu.qml:111 special-cases
@@ -487,6 +484,45 @@ test_size_enter_applies_via_the_font_size_command() {
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["14","15","16","17"]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "size-select-apply")
   assert_eq '{"action":"apply","cmd":"font-size","arg":"17"}' "$(printf '%s' "$out" | jq -c '.[-1]')"
+}
+
+
+# Size is a property OF the font, not a peer of Theme and Background, so Font
+# is a submenu holding Family and Size. Omarchy nests the same way wherever a
+# settings group has more than one knob (style.bar -> Position -> Top/Bottom).
+test_font_is_a_submenu_of_family_and_size() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Menlo"]},"fontSize":{"current":"16","options":["16"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "font-menu-report")
+  assert_eq '["Family","Size"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
+  # Entering Font must NOT apply anything — it is a submenu, and a stray
+  # apply here would try to set a font family literally called "Family".
+  assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "apply")] | length')" \
+    "opening the Font submenu must not apply anything"
+  # Neither row is a picker level, so no previews may be requested either.
+  assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "previews")] | length')"
+}
+
+# Escape used to jump straight to the root, which only worked while the menu
+# was exactly two deep. It must now walk up ONE level, landing on the row that
+# was drilled into.
+test_escape_walks_up_one_level_and_keeps_its_place() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Menlo"]},"fontSize":{"current":"16","options":["14","16"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "size-then-escape")
+  # Back at Font, not at the root...
+  assert_eq '["Family","Size"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+    "Escape from Size must land on Font, not jump to the root"
+  # ...with Size still highlighted, so the way back in is where you left it.
+  assert_eq "Size" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')"
+  # And it must not have closed the menu.
+  assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "close")] | length')"
 }
 
 run_tests
