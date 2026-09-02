@@ -53,9 +53,10 @@ Next steps:
   1. Launch Hammerspoon (Applications > Hammerspoon), then grant it
      Accessibility permission when macOS prompts you:
      System Settings > Privacy & Security > Accessibility > enable Hammerspoon.
-  2. Press cmd+alt+space to open the theme menu, cmd+ctrl+space to cycle
+  2. Press cmd+alt+O to open the theme menu, cmd+ctrl+space to cycle
      wallpapers.
-  3. Optional: add `config-file = ?omamac.conf` as the LAST line of your
-     Ghostty config, and the nvim/bat snippets from README.md, to pick up
-     theme changes in those tools too.
+  3. Optional, to pick up theme changes in the other tools: add
+     `config-file = ?omamac.conf` as the LAST line of your Ghostty config,
+     and the delta / Claude Code / bat / Neovim snippets from README.md.
+  4. Run `omamac doctor` to check everything landed.
 EOF

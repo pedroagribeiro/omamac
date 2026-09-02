@@ -1,185 +1,311 @@
 # omamac
 
-A macOS theming tool that restyles Ghostty, Neovim, btop, bat, the system
-appearance and the wallpaper from a single theme definition, plus a
-Hammerspoon-hosted menu (22 real vendored Omarchy v4.0.2 themes).
+**[Omarchy](https://omarchy.org) Quattro's theming, on macOS.**
 
-Press **⌘⌥O** to open the theme menu — pick a theme, font, or wallpaper
-and every configured target re-renders live. **⌘⌃Space** cycles the
-wallpaper for the current theme without opening the menu.
+One keystroke restyles your terminal, editor, pager, system appearance and
+wallpaper together — from a single theme definition, with 22 themes ported
+from Omarchy v4.0.2.
 
-> **Why ⌘⌥O and not ⌘⌥Space?** macOS reserves ⌥⌘Space for "Show Finder search
-> window". Disabling that preference does not release the already-running
-> registration without a re-login, so Hammerspoon's bind fails with
-> `RegisterEventHotKey failed: -9878`. ⌘⌥O is free and needs no logout. If you
-> prefer the Omarchy-faithful chord, disable the Finder shortcut, log out and
-> back in, then change the `hs.hotkey.bind` line in `hammerspoon/omamac.lua`.
+Press <kbd>⌘</kbd><kbd>⌥</kbd><kbd>O</kbd> to open the menu. Pick a theme and
+everything re-renders at once; Ghostty and Claude Code retint without a
+restart.
 
-## CLI
+<!-- screenshot goes here: the Theme coverflow. -->
 
-```bash
-omamac <command> [args]
-  theme [name|--list|--current]
-  font [name|--list|--current]
-  bg [file|--next|--list|--current]
-  menu-data
-  preview <wallpaper>
-```
+Omarchy is a Linux desktop, and its theming reaches into Hyprland, GTK,
+Quickshell and friends. omamac ports the parts that make sense on a Mac,
+copying Omarchy's real values rather than approximating them — the menu's
+geometry, the picker's coverflow, the thumbnail recipe and the colour
+mappings are all lifted from the upstream QML and shell sources at a pinned
+release tag.
 
-`theme <name>` re-renders Ghostty, Neovim, btop, bat and the system
-appearance for that theme and records it as current. A missing target (e.g.
-a tool that isn't installed) is a warning, not a failure — the only hard
-failure is the theme itself being unresolvable. `menu-data` and `preview`
-are what the Hammerspoon host calls internally; you won't normally run them
-by hand.
+## What it themes
 
-## Installing
+| Target | What omamac writes | Takes effect |
+| --- | --- | --- |
+| **Ghostty** | `~/.config/ghostty/themes/omamac`, `omamac.conf` (colours, font family, font size) | live — running terminals reload |
+| **Neovim** | `~/.local/state/omamac/current/omamac.lua` | live — pushed to running instances over their sockets |
+| **Claude Code** | `~/.claude/themes/omamac.json` | live — Claude Code watches the directory |
+| **delta** (git's pager) | `~/.config/git/omamac.ini` | next git command |
+| **btop** | `~/.config/btop/themes/omamac.theme` | next launch |
+| **bat** | `~/.config/bat/themes/omamac.tmTheme` | next launch |
+| **macOS appearance** | light/dark system setting, from the theme's `mode` | live |
+| **Wallpaper** | per-Space desktop picture, from the theme's backgrounds | live |
 
-### Nix / home-manager (this machine)
+A target that isn't installed is a warning, not a failure. The only hard
+failure is a theme that can't be resolved at all.
 
-`~/.dotfiles` wires this repo in as a flake input and a home-manager module
-(`home/programs/omamac/omamac.nix`) that puts `omamac` on `PATH` and writes
-`~/.hammerspoon/init.lua` to load the Hammerspoon host. That module is gated
-like every other program module in that repo: `bin/rebuild` alone does
-**not** turn it on. To actually get omamac running via Nix:
+## Requirements
 
-1. Set `dotfiles.programs.omamac.enable = true;` in
-   `~/.dotfiles/home/users/pedroribeiro.nix`. Without this,
-   `home/lib/mkHomeModule.nix` gates the whole module off (it defaults to
-   `false`, same as every other `dotfiles.programs.<name>.enable`), and
-   `bin/rebuild` will silently do nothing for omamac.
-2. Install Hammerspoon yourself first — the module manages no Homebrew cask,
-   only the package and the generated `init.lua` (`brew install --cask
-   hammerspoon`, or via nix-darwin/home-manager if you prefer).
-3. **Back up your current `~/.hammerspoon/init.lua`** before rebuilding.
-   `home.file` overwrites it unconditionally, and if you already have one
-   (e.g. holding an older omamac host), that content is gone once
-   `bin/rebuild` runs.
-4. Run `bin/rebuild` in `~/.dotfiles` to activate the home-manager
-   generation, install `omamac` onto `PATH`, and regenerate
-   `~/.hammerspoon/init.lua`.
-5. Launch Hammerspoon and grant it **Accessibility** permission when macOS
-   prompts (System Settings > Privacy & Security > Accessibility > enable
-   Hammerspoon) — required on this path exactly as on the Homebrew path
-   below.
-6. Press ⌘⌥O.
+- **macOS.** `sips`, `osascript`, `defaults` and `plutil` are used directly.
+- **[Hammerspoon](https://www.hammerspoon.org)** for the menu, with
+  Accessibility permission granted. The CLI works without it.
+- `bash`, `jq`, `curl` — `sips` and the rest ship with macOS.
+- Optionally the tools above. Nothing is required for omamac to run.
 
-**The flake input is a local path.** omamac has not been published anywhere,
-so `~/.dotfiles/flake.nix` currently points at it as
-`git+file:///Users/pedroribeiro/personal/omamac`. That will not resolve on
-any other machine. Once this repo is pushed to a Git host, change the input
-to a real URL (e.g. `github:pedroribeiro/omamac`) and re-run `nix flake lock
---update-input omamac` in `~/.dotfiles`.
+Backgrounds and theme previews are downloaded from Omarchy on demand and
+cached under `~/.cache/omamac`, so the first open of a picker needs network.
 
-### Homebrew (non-Nix)
+## Install
+
+### Homebrew
 
 ```bash
+git clone https://github.com/<you>/omamac.git ~/personal/omamac
+cd ~/personal/omamac
 ./install
 ```
 
-Installs `jq` and Hammerspoon via Homebrew, symlinks `bin/omamac` into
-`~/.local/bin`, and writes `~/.hammerspoon/init.lua` (unless one already
-exists — in that case it prints the one line to add by hand instead of
-overwriting your file). After it runs:
+That installs `jq` and Hammerspoon, symlinks `bin/omamac` into
+`~/.local/bin`, and writes `~/.hammerspoon/init.lua` — unless you already
+have one, in which case it prints the single line to add by hand rather than
+overwriting your config.
 
-1. Launch Hammerspoon and grant it **Accessibility** permission when macOS
-   prompts (System Settings > Privacy & Security > Accessibility).
-2. Press ⌘⌥O.
+Then launch Hammerspoon, grant it Accessibility permission when macOS
+prompts (System Settings → Privacy & Security → Accessibility), and press
+<kbd>⌘</kbd><kbd>⌥</kbd><kbd>O</kbd>.
+
+### Nix flake
+
+Add the input:
+
+```nix
+inputs.omamac.url = "github:<you>/omamac";
+```
+
+`packages.default` puts `omamac` on `PATH`, wrapped with the tools it needs.
+The Hammerspoon host has to be loaded from `~/.hammerspoon/init.lua`, and the
+path must be written in **literally** — a GUI app launched through
+LaunchServices inherits no shell environment, so `home.sessionVariables` and
+`.zshrc` exports are both invisible to `Hammerspoon.app`:
+
+```nix
+home.file.".hammerspoon/init.lua".text = ''
+  OMAMAC_DIR = "${inputs.omamac.packages.${pkgs.system}.default}/share/omamac"
+  OMAMAC_BIN = "${inputs.omamac.packages.${pkgs.system}.default}/bin/omamac"
+  dofile(OMAMAC_DIR .. "/hammerspoon/omamac.lua")
+'';
+```
+
+`OMAMAC_BIN` should point at the **wrapped** binary in `bin/`, not the copy
+under `share/omamac/bin/` — only the wrapper has `jq`/`curl` on `PATH`.
+
+Install Hammerspoon yourself (`brew install --cask hammerspoon`); the flake
+packages no cask. And back up any existing `~/.hammerspoon/init.lua` first —
+`home.file` overwrites it unconditionally.
 
 ## Wiring individual tools
 
-Most targets (Ghostty, btop, bat, macOS appearance) are re-rendered directly
-into files those tools already read, so nothing further is needed once a
-theme has been applied once. Two need one line added to their own config,
-because omamac writes to a file that has to be explicitly included/loaded:
+Most targets are written straight into files those tools already read, so
+they need nothing further. Four need one line each, because omamac writes to
+a file that has to be explicitly included:
 
-**Ghostty** — append as the **last** line of `~/.config/ghostty/config` (it
-must come after any other `config-file` includes, since later values win):
+**Ghostty** — the **last** line of `~/.config/ghostty/config`, after any
+other `config-file` includes, since later values win:
+
 ```
 config-file = ?omamac.conf
 ```
 
-**Neovim** — append to your `init.lua`:
+**delta** — the **last** include in your git config, after your own `[delta]`
+section so these values win (notably `light`, which omamac drives from the
+theme):
+
+```ini
+[include]
+  path = ~/.config/git/omamac.ini
+```
+
+**Claude Code** — in `~/.claude/settings.json`:
+
+```json
+{ "theme": "custom:omamac" }
+```
+
+**bat** — point it at the generated theme, and build the cache once so bat
+can see it (`bat cache --build`):
+
+```bash
+alias cat='bat -p --theme=omamac'
+```
+
+**Neovim** — in your `init.lua`:
+
 ```lua
--- omamac: load the generated colorscheme, and expose a socket so a theme
--- switch can reload it live.
+-- Load omamac's generated colorscheme, and expose a socket so a theme
+-- switch can push the new one into this instance live.
 local omamac_theme = os.getenv("HOME") .. "/.local/state/omamac/current/omamac.lua"
 if vim.uv.fs_stat(omamac_theme) then pcall(dofile, omamac_theme) end
 local sockdir = os.getenv("HOME") .. "/.cache/nvim/servers"
 vim.fn.mkdir(sockdir, "p")
 pcall(vim.fn.serverstart, sockdir .. "/" .. vim.fn.getpid() .. ".sock")
 ```
-The socket lets a theme switch push the new colorscheme into every running
-Neovim instance instead of only the next one you open.
 
-If your config also has something like `vim-lumen` watching the macOS
-appearance to switch colorschemes on its own (e.g. between a light and dark
-variant of a different theme plugin), point its light/dark callbacks at
-omamac's generated colorscheme too, not at that other theme — otherwise it
-will win the race on every light↔dark flip and clobber whatever omamac just
-rendered. The other theme plugin can stay installed as a fallback for before
-omamac's state file exists (a fresh machine, or before the first `omamac
-theme` run); vim-lumen's job is only to signal *when* the appearance flips,
-never to decide *what* colorscheme to apply once omamac is in the picture.
+If something like [vim-lumen](https://github.com/vimpostor/vim-lumen) also
+watches the macOS appearance and switches colorscheme on its own, point its
+light/dark callbacks at omamac's generated file too — otherwise it will
+clobber omamac's colours on every light↔dark flip. Its job is to signal
+*when* the appearance changes, never to decide *what* to apply:
 
-**bat** — point the `cat` alias at the generated theme, e.g. in your shell rc:
-```bash
-alias cat='bat -p --theme=omamac'
+```lua
+vim.api.nvim_create_autocmd("User", { pattern = "LumenLight", callback = load_omamac })
+vim.api.nvim_create_autocmd("User", { pattern = "LumenDark",  callback = load_omamac })
 ```
 
-On this machine, `~/.dotfiles` already carries all three edits.
+## Usage
 
-## OMAMAC_DIR
+| Key | Action |
+| --- | --- |
+| <kbd>⌘</kbd><kbd>⌥</kbd><kbd>O</kbd> | Open the menu |
+| <kbd>⌘</kbd><kbd>⌃</kbd><kbd>Space</kbd> | Next wallpaper in the current theme |
 
-Every `omamac-*` script resolves its siblings through `OMAMAC_DIR`. The CLI
-dispatcher (`bin/omamac`) sets it from its own resolved location if unset, so
-running it from a checkout or from a Nix store path both work with no
-configuration.
+In the menu: type to filter, <kbd>↑</kbd>/<kbd>↓</kbd> or
+<kbd>←</kbd>/<kbd>→</kbd> to move, <kbd>Enter</kbd> to apply,
+<kbd>Esc</kbd> to go back one level and then close.
 
-The Hammerspoon host (`hammerspoon/omamac.lua`) cannot rely on a shell
-environment variable, because GUI apps launched through LaunchServices
-inherit no shell rc exports — `home.sessionVariables` in home-manager, or an
-export in `.zshrc`, is invisible to `Hammerspoon.app`. It resolves
-`OMAMAC_DIR` in this order:
-1. A global `OMAMAC_DIR` Lua variable, set by whatever wrote `init.lua`
-   (home-manager writes the Nix store path in literally; `./install` writes
-   the checkout path the same way).
-2. The `OMAMAC_DIR` environment variable, for non-GUI invocations.
-3. `~/personal/omamac`, as a last resort.
+> **Why <kbd>⌘</kbd><kbd>⌥</kbd><kbd>O</kbd> and not <kbd>⌘</kbd><kbd>⌥</kbd><kbd>Space</kbd>?**
+> macOS reserves ⌥⌘Space for "Show Finder search window". Disabling that
+> preference does not release the running registration without a re-login, so
+> Hammerspoon's bind fails with `RegisterEventHotKey failed: -9878`. Change
+> the `hs.hotkey.bind` line in `hammerspoon/omamac.lua` if you'd rather have
+> the Omarchy-faithful chord and don't mind logging out.
 
-## Checking it works
+### CLI
 
-`omamac doctor` verifies that every target actually reflects the current
-theme, and exits non-zero if any does not:
+```
+omamac theme      [name|--list|--current]
+omamac font       [name|--list|--current]
+omamac font-size  [points|--list|--current]
+omamac bg         [file|--next|--list|--current]
+omamac doctor
+omamac menu-data
+omamac preview    <wallpaper>|--theme <name>|--paths [--theme]
+```
+
+`menu-data` and `preview` are what the Hammerspoon host calls; you won't
+normally run them by hand.
+
+The font list is restricted to Nerd Fonts. Every source omamac reads already
+reports only monospace families, so "monospace" wouldn't narrow anything —
+what it would still let through is CJK system faces that are fixed-width but
+useless for code. Override the pattern to widen it:
+
+```bash
+OMAMAC_FONT_FILTER='.' omamac font --list          # everything available
+```
+
+## omamac doctor
 
 ```bash
 omamac doctor
 ```
 
-It is read-only: it never re-renders and never repairs. Drift is the finding,
-and a diagnostic that fixes what it inspects can never tell you something was
-wrong. Most failures it reports are cleared by re-applying the theme:
+Checks that every target actually reflects the current theme, and exits
+non-zero if any doesn't. It's **read-only**: it never re-renders and never
+repairs, because drift is the finding and a diagnostic that fixes what it
+inspects can never tell you something was wrong. Most failures clear with:
 
 ```bash
 omamac theme "$(omamac theme --current)"
 ```
 
-Beyond checking that generated files exist, it asks whether each artefact
-carries the *current* theme's colours, whether the pointer that makes it take
-effect is in place (Ghostty's `config-file` include, btop's `color_theme`,
-Claude's `custom:omamac`, delta's `[include]`), and whether the tool itself
-can see it — `bat`, for instance, only uses themes it has compiled into its
-cache, so a perfectly correct `.tmTheme` can still be invisible.
+It deliberately asks more than "does the file exist". Each check asks whether
+the artefact carries the *current* theme's colours, whether the pointer that
+makes it take effect is in place, and whether the consuming tool can really
+see it — `bat`, for instance, only uses themes it has compiled into its
+cache, so a perfectly correct `.tmTheme` can be invisible; and delta's values
+only win if the `[include]` is ordered after your own `[delta]` block, so
+that check resolves through your real git config rather than reading the
+generated file.
+
+## Configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `OMAMAC_FONT_FILTER` | Case-insensitive ERE for which font families the picker offers. Default matches Nerd Fonts. |
+| `OMAMAC_OMARCHY_REV` | Upstream tag backgrounds and previews are fetched from. Default `v4.0.2`. |
+| `OMAMAC_CONFIG_ROOT` | Where per-tool configs are written. Default `~/.config`. |
+| `OMAMAC_CLAUDE_DIR` / `CLAUDE_CONFIG_DIR` | Claude Code's config directory. Default `~/.claude`. |
+| `OMAMAC_STATE` / `OMAMAC_CACHE` | State and cache roots. Default `~/.local/state/omamac`, `~/.cache/omamac`. |
+| `OMAMAC_THEMES_DIR` | Where themes are read from. Default the checkout's `themes/`. |
+| `OMAMAC_DIR` | Install root. Resolved automatically; see below. |
+
+The remaining `OMAMAC_*` variables (`OMAMAC_PS`, `OMAMAC_KILL`,
+`OMAMAC_OSASCRIPT`, `OMAMAC_SIPS`, `OMAMAC_FETCH`, `OMAMAC_BAT`,
+`OMAMAC_GIT`, `OMAMAC_DEFAULTS`, `OMAMAC_GHOSTTY`, `OMAMAC_NVIM`,
+`OMAMAC_FCLIST`) exist so the test suite can substitute stubs for anything
+that would touch the real machine. They work at runtime too, but that's not
+what they're for.
+
+### OMAMAC_DIR
+
+Every `omamac-*` script finds its siblings through `OMAMAC_DIR`. The
+dispatcher sets it from its own resolved location if unset, so running from a
+checkout or from a Nix store path both work unconfigured. The Hammerspoon
+host can't use the environment at all (GUI apps inherit no shell), so it
+resolves, in order: a global `OMAMAC_DIR` Lua variable written into
+`init.lua`, then the environment variable, then `~/personal/omamac`.
+
+## How it works
+
+```
+bin/omamac            dispatcher; every verb is bin/omamac-<verb>
+lib/                  colours (Omarchy's schema + mix), state, fetch, logging
+render/               one script per target, all driven from colors.toml
+themes/<name>/        vendored colors.toml + backgrounds.index
+menu/menu.html        the menu, rendered in a WKWebView
+hammerspoon/omamac.lua  hotkeys, the webview host, message plumbing
+```
+
+A theme switch renders Ghostty first and reloads it immediately — it's the
+thing you're looking at — then runs the remaining renderers concurrently.
+
+**Themes are vendored, backgrounds are not.** Each theme directory holds the
+`colors.toml` and an index of its background filenames; the images and
+preview screenshots are fetched on demand from a pinned upstream tag and
+cached. Re-vendor with `tools/sync-themes`.
+
+**Colour resolution is its own layer** (`lib/colors.sh`). Omarchy's `master`
+branch uses a legacy `color0`–`color15` palette while the v4 release tags use
+named colours (`red`, `bright_blue`, …) plus an explicit `mode`. Renderers
+ask for whichever they want and an alias chain resolves it, so both schemas
+work and a missing key degrades loudly instead of emitting an empty value.
+
+### Adding a target
+
+1. Write `render/<tool>`, taking a theme directory and wherever it should
+   write. Use `omamac_hex_or_warn` for colours and `omamac_is_light` for
+   light/dark. Rename generated files into place rather than writing in situ
+   if anything might read them concurrently.
+2. Add it to the concurrent block in `bin/omamac-theme`, with its own
+   `wait`/`log_warn` pair so its failure is reported as its own.
+3. Add checks to `bin/omamac-doctor` — including whether the pointer that
+   makes it take effect is present.
+4. Add `tests/render_<tool>_test.sh`, and a test in `tests/theme_test.sh`
+   asserting a real theme switch writes it.
 
 ## Development
 
-Run tests with:
 ```bash
 ./tests/run
 ```
 
-Build the Nix package:
-```bash
-nix build .#
-./result/bin/omamac theme --list
-```
+The suite is plain bash — no framework — and needs `node`, a Lua front-end,
+`jq` and macOS's `plutil`. There's deliberately no flake `checks` output:
+none of those exist in a Nix sandbox, and a check that can never pass is
+worse than none.
+
+Tests here are expected to be **mutation-checked**: break the thing on
+purpose and confirm a test fails. This codebase has produced a long line of
+tests that passed for the wrong reason — presence assertions that couldn't
+detect a swap, a harness whose exit gate was swallowed by a subshell, a
+colour comparison that couldn't see a reversed interpolation. If a test
+didn't fail against a deliberate break, it isn't testing anything.
+
+## Credits
+
+Themes, colour schema, menu geometry, picker behaviour and thumbnail recipe
+all come from [Omarchy](https://github.com/omacom/omarchy) by David
+Heinemeier Hansson and contributors, MIT licensed. omamac vendors each
+theme's `colors.toml` and fetches its backgrounds from a pinned release tag.
+It is not affiliated with or endorsed by the Omarchy project.
