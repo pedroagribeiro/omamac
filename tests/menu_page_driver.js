@@ -171,14 +171,16 @@ switch (scenario) {
     break;
   case 'bg-render-thrice':
     fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Background
+    fireKey('ArrowDown'); // root: Font -> Size
+    fireKey('ArrowDown'); // root: Size -> Background
     fireKey('Enter');     // enter Background — first render() call
     fireKey('ArrowDown'); // second render() call, no thumbs supplied meanwhile
     fireKey('ArrowDown'); // third render() call, ditto
     break;
   case 'bg-select-apply':
     fireKey('ArrowDown');  // root: Theme -> Font
-    fireKey('ArrowDown');  // root: Font -> Background
+    fireKey('ArrowDown');  // root: Font -> Size
+    fireKey('ArrowDown');  // root: Size -> Background
     fireKey('Enter');      // enter Background (coverflow), sel resets to 0
     fireKey('ArrowRight'); // move selection to the second item, coverflow-style
     fireKey('Enter');      // apply the now-selected (second) item
@@ -193,6 +195,18 @@ switch (scenario) {
   case 'font-open-and-report':
     fireKey('ArrowDown'); // root: Theme -> Font
     fireKey('Enter');     // enter Font (a list, not a coverflow)
+    break;
+  case 'size-open-and-report':
+    fireKey('ArrowDown'); // root: Theme -> Font
+    fireKey('ArrowDown'); // root: Font -> Size
+    fireKey('Enter');     // enter Size (a list, like Font)
+    break;
+  case 'size-select-apply':
+    fireKey('ArrowDown'); // root: Theme -> Font
+    fireKey('ArrowDown'); // root: Font -> Size
+    fireKey('Enter');     // enter Size, landing on the current size
+    fireKey('ArrowDown'); // one size up
+    fireKey('Enter');     // apply it
     break;
   case 'theme-select-apply':
     fireKey('Enter');      // root -> Theme (the coverflow)
@@ -219,7 +233,8 @@ switch (scenario) {
     break;
   case 'bg-unavailable-preview':
     fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Background
+    fireKey('ArrowDown'); // root: Font -> Size
+    fireKey('ArrowDown'); // root: Size -> Background
     fireKey('Enter');     // enter Background — one bulk request for the level
     // The host reporting that this item has no readable thumbnail. It must
     // not be cached (an empty src renders as a broken image) and it must not
@@ -245,7 +260,8 @@ function listReport() {
   });
 }
 
-if (scenario === 'font-open-and-report' || scenario === 'root-report') {
+if (scenario === 'font-open-and-report' || scenario === 'root-report'
+    || scenario === 'size-open-and-report') {
   process.stdout.write(JSON.stringify({
     messages,
     list: listReport(),

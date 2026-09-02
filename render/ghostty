@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# render/ghostty <theme-dir> <config-root> [font-family]
+# render/ghostty <theme-dir> <config-root> [font-family] [font-size]
 set -uo pipefail
 _here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "${_here}/lib/log.sh"
 source "${_here}/lib/colors.sh"
 
-theme_dir="$1"; root="$2"; font="${3:-}"
+theme_dir="$1"; root="$2"; font="${3:-}"; size="${4:-}"
 toml="${theme_dir}/colors.toml"
 [ -f "$toml" ] || { log_error "no colors.toml in ${theme_dir}"; exit 1; }
 
@@ -39,5 +39,13 @@ c() { omamac_hex_or_warn "$toml" "$1" "$(basename "$theme_dir")"; }
     # or the committed family stays primary.
     printf 'font-family = ""\n'
     printf 'font-family = "%s"\n' "$font"
+  fi
+  # Emitted only once a size has actually been chosen. Unset, this file stays
+  # silent on font-size and whatever the user's own config declares keeps
+  # applying — omamac must not invent a size for someone who never asked for
+  # one. (font-size does not accumulate the way font-family does, so no reset
+  # line is needed: this include is applied last, so it simply wins.)
+  if [ -n "$size" ]; then
+    printf 'font-size = %s\n' "$size"
   fi
 } > "${root}/ghostty/omamac.conf"

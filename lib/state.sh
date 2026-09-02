@@ -12,3 +12,13 @@ omamac_state_get() {
   [ -f "${OMAMAC_STATE}/$1" ] || return 0
   cat "${OMAMAC_STATE}/$1"
 }
+
+# Remove a key entirely, so omamac_state_get reports it as unset rather than
+# as an empty value. Needed to roll a speculative write back to "never chosen"
+# — writing "" instead would make a caller that distinguishes unset from empty
+# (e.g. font.size, where unset means "leave the user's own config alone")
+# take the wrong branch.
+omamac_state_clear() {
+  rm -f "${OMAMAC_STATE}/$1"
+}
+

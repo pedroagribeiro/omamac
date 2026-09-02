@@ -332,8 +332,11 @@ test_root_rows_keep_their_own_icons() {
   # from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  assert_eq '["\udb83\ude0c","\ue659","\uf03e"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
-    "root must keep the Theme/Font/Background glyphs from omarchy-menu.jsonc"
+  # Theme/Font/Background are verbatim from omarchy-menu.jsonc; Size (U+F034,
+  # fa-text-height) has no upstream counterpart and was verified present by
+  # parsing the Nerd Font's cmap rather than assumed.
+  assert_eq '["\udb83\ude0c","\ue659","\uf034","\uf03e"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root must keep its four glyphs"
 }
 
 # The Font menu is WIDER than every other card. Menu.qml:111 special-cases
@@ -446,6 +449,44 @@ test_a_short_list_is_not_folded_at_all() {
   local out; out=$(OMAMAC_VIEWPORT_H=1080 run_driver "$data" "font-open-and-report")
   assert_eq "192px" "$(printf '%s' "$out" | jq -r '.listMaxH')" \
     "a list that fits must end flush with its last row, with no peek"
+}
+
+# The Size level. Ghostty points shown exactly as written to the config — not
+# Omarchy's px scale, which only exists there because one knob also drives the
+# Quickshell rem root and GTK's text-scaling-factor. Neither exists on macOS,
+# so showing "12" and writing 9 would just misreport the chosen number.
+test_size_level_marks_the_current_size_and_applies_the_selected_one() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["14","15","16","17"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "size-open-and-report")
+
+  assert_eq "false" "$(printf '%s' "$out" | jq -r '.cardHidden')" "Size is a card list, not a coverflow"
+  assert_eq 4 "$(printf '%s' "$out" | jq '.list | length')"
+  # Opens ON the size in effect (index 2 of four), like every other level.
+  assert_eq "16" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')"
+  assert_eq '"\u2713"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "16") | .icon')" \
+    "the active size must carry the check marker"
+  assert_eq '"\uf034"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "14") | .icon')" \
+    "every other row carries the Size glyph"
+  # A picker level must never request image previews.
+  assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "previews")] | length')"
+}
+
+test_size_enter_applies_via_the_font_size_command() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # Opens on 16 (index 2), ArrowDown moves to 17, Enter applies it. Asserting
+  # action, cmd AND arg on the same message is what makes a wrong command name
+  # — `font` instead of `font-size`, which would try to set a FONT FAMILY
+  # called "17" — impossible to slip through.
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["14","15","16","17"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "size-select-apply")
+  assert_eq '{"action":"apply","cmd":"font-size","arg":"17"}' "$(printf '%s' "$out" | jq -c '.[-1]')"
 }
 
 run_tests

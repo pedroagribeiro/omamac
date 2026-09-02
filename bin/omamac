@@ -17,15 +17,16 @@ usage() {
 omamac <command> [args]
   theme [name|--list|--current]
   font [name|--list|--current]
+  font-size [points|--list|--current]
   bg [file|--next|--list|--current]
   menu-data
-  preview <wallpaper>|--theme <name>
+  preview <wallpaper>|--theme <name>|--paths [--theme]
 EOF
 }
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
-  theme|font|bg|menu-data|preview) exec "${OMAMAC_DIR}/bin/omamac-${cmd}" "$@" ;;
+  theme|font|font-size|bg|menu-data|preview) exec "${OMAMAC_DIR}/bin/omamac-${cmd}" "$@" ;;
   --print-dir)   printf '%s\n' "$OMAMAC_DIR" ;;
   ""|-h|--help)  usage; [ -z "$cmd" ] && exit 1 || exit 0 ;;
   *)             printf 'omamac: unknown command: %s\n' "$cmd" >&2; usage; exit 1 ;;

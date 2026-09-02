@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# omamac-font-size [points|--list|--current]
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+CONFIG_ROOT="${OMAMAC_CONFIG_ROOT:-$HOME/.config}"
+
+# Ghostty points, directly — NOT Omarchy's px scale.
+#
+# omarchy-display-text-size takes 9-20 "px" and converts (px * 9/12) to a
+# terminal point size, because that one knob also drives the Quickshell rem
+# root and GTK's text-scaling-factor, which need a shared unit. Neither of
+# those exists on macOS: the terminal is the only consumer here. Carrying the
+# indirection would mean showing "12" and writing 9 into the config, which is
+# just a lie about the number the user picked.
+MIN=10
+MAX=24
+
+size_list() { seq "$MIN" "$MAX"; }
+
+# The size in effect. Once omamac has been asked for one, that is the answer.
+# Before that, report what Ghostty is actually using — read from the user's own
+# config — so the picker marks the right row the first time it is opened
+# rather than showing nothing as current.
+size_current() {
+  local v
+  v=$(omamac_state_get font.size)
+  if [ -n "$v" ]; then printf '%s\n' "$v"; return 0; fi
+  # Last wins in Ghostty's config, hence tail -1.
+  sed -n -E 's/^[[:space:]]*font-size[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' \
+    "${CONFIG_ROOT}/ghostty/config" 2>/dev/null | tail -1
+}
+
+size_set() {
+  local size="$1" theme prev
+  case "$size" in
+    ''|*[!0-9]*) log_error "font size must be a whole number: ${size}"; return 1 ;;
+  esac
+  if [ "$size" -lt "$MIN" ] || [ "$size" -gt "$MAX" ]; then
+    log_error "font size must be between ${MIN} and ${MAX}: ${size}"
+    return 1
+  fi
+  # Same shape as omamac-font's font_set: the re-render reads the size back
+  # out of state, so the write has to come first — which makes it speculative.
+  # Roll it back if the render fails, or `font-size --current` would report a
+  # size that was never applied.
+  prev=$(omamac_state_get font.size)
+  omamac_state_set font.size "$size"
+  theme=$(omamac_state_get theme.name)
+  if [ -n "$theme" ]; then
+    if ! "${OMAMAC_DIR}/bin/omamac-theme" "$theme"; then
+      if [ -n "$prev" ]; then omamac_state_set font.size "$prev"; else omamac_state_clear font.size; fi
+      log_error "could not apply font size ${size}; reverted to ${prev:-default}"
+      return 1
+    fi
+  fi
+  log_info "Font size set to ${size}."
+}
+
+case "${1:-}" in
+  --list)    size_list ;;
+  --current) size_current ;;
+  "")        size_current ;;
+  *)         size_set "$1" ;;
+esac

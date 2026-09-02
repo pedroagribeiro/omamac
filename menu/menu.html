@@ -297,7 +297,15 @@
   // glyphs when they were first typed as literals here). Omarchy also
   // defines U+EBCF for the "Style" parent entry — unused here, since our
   // root level *is* that Style submenu.
-  const ROOT_ICONS = { Theme: "\u{f0e0c}", Font: "\u{e659}", Background: "\u{f03e}" };
+  // Theme/Font/Background are verbatim from omarchy-menu.jsonc. Size has no
+  // upstream counterpart — Omarchy exposes text size as a CLI command
+  // (omarchy-display-text-size), not a menu entry — so U+F034, fa-text-height,
+  // is a choice rather than a port. It was picked by parsing the Nerd Font's
+  // cmap rather than assumed present: it lives in the same Font Awesome block
+  // as the Background glyph above, which already renders here.
+  const ROOT_ICONS = {
+    Theme: "\u{f0e0c}", Font: "\u{e659}", Size: "\u{f034}", Background: "\u{f03e}",
+  };
 
   // Font is not a picker upstream, it is a menu PROVIDER — omarchy-menu.jsonc
   // gives Theme and Background an `action:` that launches the image picker,
@@ -369,7 +377,7 @@
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Font", "Background"],
+      items: () => ["Theme", "Font", "Size", "Background"],
       icon: (name) => ROOT_ICONS[name] || "",
     },
     // `width` follows Menu.qml:111, which gives style.font (and the
@@ -388,6 +396,17 @@
         name === (DATA.font.current || "") ? CURRENT_MARK : ROOT_ICONS.Font,
       width: 520,
       // Deliberate deviation — see ROWS above.
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
+    },
+    // Ghostty points, shown exactly as they are written to the config. Same
+    // provider-row treatment as Font — a glyph per row, a check on the active
+    // one — since it is the same kind of list.
+    fontsize: {
+      crumb: "Size", cmd: "font-size",
+      current: () => String(DATA.fontSize?.current || ""),
+      items: () => DATA.fontSize?.options || [],
+      icon: (name) =>
+        name === String(DATA.fontSize?.current || "") ? CURRENT_MARK : ROOT_ICONS.Size,
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
     bg: {
@@ -608,7 +627,7 @@
     if (!items.length) return;
     const pick = items[sel];
     if (level === "root") {
-      enterLevel({ Theme: "theme", Font: "font", Background: "bg" }[pick]);
+      enterLevel({ Theme: "theme", Font: "font", Size: "fontsize", Background: "bg" }[pick]);
     } else {
       send({ action: "apply", cmd: LEVELS[level].cmd, arg: pick });
     }
