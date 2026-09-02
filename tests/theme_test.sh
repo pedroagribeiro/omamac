@@ -235,4 +235,28 @@ test_theme_switch_writes_the_claude_theme() {
   unset OMAMAC_CLAUDE_DIR
 }
 
+# A renderer can exist, be tested in isolation, and never be wired into
+# theme_set — this drives the real command.
+test_theme_switch_writes_the_delta_include() {
+  setup_themes
+  "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
+  local out="$OMAMAC_CONFIG_ROOT/git/omamac.ini"
+  [ -f "$out" ] || { fail "a theme switch did not write the delta include"; return; }
+  git config -f "$out" --list >/dev/null 2>&1 || fail "the delta include does not parse"
+  assert_eq "omamac" "$(git config -f "$out" --get delta.syntax-theme)"
+  # Bound to the theme actually applied: the plus tint must be built from that
+  # theme's background, not from some other theme's.
+  local bg tint
+  bg=$(sed -n -E 's/^[[:space:]]*background[[:space:]]*=[[:space:]]*"?#?([0-9A-Fa-f]{6})"?.*/\1/p' \
+    "$OMAMAC_THEMES_DIR/tokyo-night/colors.toml" | head -1 | tr 'A-F' 'a-f')
+  tint=$(git config -f "$out" --get delta.plus-style)
+  # The 15% tint keeps the two high nibbles of the background's red channel in
+  # range; just assert it is a real colour and not the background verbatim.
+  case "$tint" in
+    'syntax #'*) ;;
+    *) fail "plus-style is not a colour: $tint" ;;
+  esac
+  [ "${tint#syntax #}" != "$bg" ] || fail "plus-style was not tinted at all"
+}
+
 run_tests
