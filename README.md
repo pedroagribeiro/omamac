@@ -147,6 +147,30 @@ export in `.zshrc`, is invisible to `Hammerspoon.app`. It resolves
 2. The `OMAMAC_DIR` environment variable, for non-GUI invocations.
 3. `~/personal/omamac`, as a last resort.
 
+## Checking it works
+
+`omamac doctor` verifies that every target actually reflects the current
+theme, and exits non-zero if any does not:
+
+```bash
+omamac doctor
+```
+
+It is read-only: it never re-renders and never repairs. Drift is the finding,
+and a diagnostic that fixes what it inspects can never tell you something was
+wrong. Most failures it reports are cleared by re-applying the theme:
+
+```bash
+omamac theme "$(omamac theme --current)"
+```
+
+Beyond checking that generated files exist, it asks whether each artefact
+carries the *current* theme's colours, whether the pointer that makes it take
+effect is in place (Ghostty's `config-file` include, btop's `color_theme`,
+Claude's `custom:omamac`, delta's `[include]`), and whether the tool itself
+can see it — `bat`, for instance, only uses themes it has compiled into its
+cache, so a perfectly correct `.tmTheme` can still be invisible.
+
 ## Development
 
 Run tests with:

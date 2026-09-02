@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# omamac-doctor — check that every target actually reflects the current theme.
+#
+# READ-ONLY, deliberately. It never re-renders and never fixes: drift is the
+# thing being reported, and a diagnostic that silently repairs what it finds
+# can never tell you something was broken. The fix is always the same anyway —
+# re-run `omamac theme "$(omamac theme --current)"`.
+#
+# What it is for: every serious bug in this project so far has been silent.
+# Preview data truncated at a 1024-byte boundary; hs.task dropping a child's
+# stdout while exiting 0; menu rows squashed to 25px by a flex default;
+# thumbnails served forever from a stale cache; a colour swallowed by git's
+# comment syntax. In every case the file existed and looked plausible, and
+# nothing failed loudly. So the checks below are not "does the file exist" —
+# where it can be done cheaply, each one asks whether the artefact really
+# carries the CURRENT theme's colours, whether the thing that makes it take
+# effect is actually in place, and whether the tool itself can see it.
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/state.sh"
+source "${OMAMAC_DIR}/lib/colors.sh"
+
+THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
+CONFIG_ROOT="${OMAMAC_CONFIG_ROOT:-$HOME/.config}"
+CLAUDE_DIR="${OMAMAC_CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
+BAT="${OMAMAC_BAT:-bat}"
+GIT="${OMAMAC_GIT:-git}"
+DEFAULTS="${OMAMAC_DEFAULTS:-defaults}"
+
+fails=0
+
+pass() { printf '  ok    %-8s %s\n' "$1" "$2"; }
+fail() { printf '  FAIL  %-8s %s\n' "$1" "$2"; fails=$((fails + 1)); }
+skip() { printf '  skip  %-8s %s\n' "$1" "$2"; }
+
+# A file exists AND mentions the current theme's background colour. That second
+# half is what makes this more than a stat(): a file left over from a previous
+# theme passes an existence check and fails this one.
+carries_bg() { [ -f "$1" ] && grep -qiF "$BG" "$1"; }
+
+theme=$(omamac_state_get theme.name)
+if [ -z "$theme" ]; then
+  printf 'omamac: no theme has been applied yet — run `omamac theme --list` to pick one.\n' >&2
+  exit 1
+fi
+toml="${THEMES_DIR}/${theme}/colors.toml"
+if [ ! -f "$toml" ]; then
+  printf 'omamac: current theme %s has no colors.toml at %s\n' "$theme" "$toml" >&2
+  exit 1
+fi
+BG=$(omamac_color "$toml" background)
+if omamac_is_light "$toml"; then MODE=light; else MODE=dark; fi
+
+printf 'omamac doctor — theme %s (%s), background #%s\n\n' "$theme" "$MODE" "$BG"
+
+# ── ghostty ────────────────────────────────────────────────────────────────
+if carries_bg "${CONFIG_ROOT}/ghostty/themes/omamac"; then
+  pass ghostty "palette matches ${theme}"
+else
+  fail ghostty "themes/omamac missing or stale (no #${BG})"
+fi
+conf="${CONFIG_ROOT}/ghostty/omamac.conf"
+if [ -f "$conf" ] && grep -q '^theme = omamac' "$conf"; then
+  pass ghostty "omamac.conf selects the generated theme"
+else
+  fail ghostty "omamac.conf missing or does not select theme = omamac"
+fi
+# The include is what makes any of it apply; without it the generated files
+# are inert and everything above still passes.
+if grep -qs 'omamac\.conf' "${CONFIG_ROOT}/ghostty/config"; then
+  pass ghostty "config includes omamac.conf"
+else
+  fail ghostty "your ghostty config has no 'config-file = ?omamac.conf' line — nothing omamac writes is being read"
+fi
+want_font=$(omamac_state_get font)
+if [ -n "$want_font" ]; then
+  if grep -qF "font-family = \"${want_font}\"" "$conf" 2>/dev/null; then
+    pass ghostty "font-family is ${want_font}"
+  else
+    fail ghostty "font-family in omamac.conf is not ${want_font}"
+  fi
+fi
+want_size=$(omamac_state_get font.size)
+if [ -n "$want_size" ]; then
+  if grep -qF "font-size = ${want_size}" "$conf" 2>/dev/null; then
+    pass ghostty "font-size is ${want_size}"
+  else
+    fail ghostty "font-size in omamac.conf is not ${want_size}"
+  fi
+fi
+
+# ── nvim ───────────────────────────────────────────────────────────────────
+nvim_lua="${OMAMAC_STATE}/current/omamac.lua"
+if carries_bg "$nvim_lua"; then
+  pass nvim "colorscheme matches ${theme}"
+else
+  fail nvim "current/omamac.lua missing or stale (no #${BG})"
+fi
+
+# ── btop ───────────────────────────────────────────────────────────────────
+if carries_bg "${CONFIG_ROOT}/btop/themes/omamac.theme"; then
+  pass btop "theme matches ${theme}"
+else
+  fail btop "themes/omamac.theme missing or stale (no #${BG})"
+fi
+if grep -qs '^color_theme *= *"omamac"' "${CONFIG_ROOT}/btop/btop.conf"; then
+  pass btop "btop.conf selects omamac"
+else
+  fail btop "btop.conf does not select color_theme = \"omamac\""
+fi
+
+# ── bat ────────────────────────────────────────────────────────────────────
+if carries_bg "${CONFIG_ROOT}/bat/themes/omamac.tmTheme"; then
+  pass bat "theme matches ${theme}"
+else
+  fail bat "themes/omamac.tmTheme missing or stale (no #${BG})"
+fi
+# bat compiles themes into a cache; a .tmTheme it has never been told about is
+# invisible however correct the file is. Asking bat itself is the only way to
+# know, and it is exactly the sort of gap the file checks above would miss.
+if command -v "$BAT" >/dev/null 2>&1; then
+  if "$BAT" --list-themes 2>/dev/null | grep -qx 'omamac'; then
+    pass bat "bat can see the omamac theme"
+  else
+    fail bat "bat does not list 'omamac' — run: bat cache --build"
+  fi
+else
+  skip bat "bat is not on PATH"
+fi
+
+# ── delta ──────────────────────────────────────────────────────────────────
+delta_ini="${CONFIG_ROOT}/git/omamac.ini"
+if [ -f "$delta_ini" ] && "$GIT" config -f "$delta_ini" --list >/dev/null 2>&1; then
+  pass delta "omamac.ini parses"
+else
+  fail delta "git/omamac.ini missing or unparseable"
+fi
+# Resolved through the user's real git config, not the generated file: this is
+# the only check that proves the [include] is present AND ordered after the
+# committed [delta] block, which is what makes these values win.
+resolved=$("$GIT" config --get delta.syntax-theme 2>/dev/null)
+if [ "$resolved" = "omamac" ]; then
+  pass delta "git resolves delta.syntax-theme = omamac"
+else
+  fail delta "git resolves delta.syntax-theme = '${resolved:-unset}' — the [include] is missing or ordered before your own [delta] block"
+fi
+want_light=false; [ "$MODE" = light ] && want_light=true
+resolved_light=$("$GIT" config --get delta.light 2>/dev/null)
+if [ "$resolved_light" = "$want_light" ]; then
+  pass delta "git resolves delta.light = ${want_light}"
+else
+  fail delta "git resolves delta.light = '${resolved_light:-unset}', but ${theme} is ${MODE}"
+fi
+
+# ── claude ─────────────────────────────────────────────────────────────────
+claude_theme="${CLAUDE_DIR}/themes/omamac.json"
+if [ -f "$claude_theme" ] && command -v jq >/dev/null 2>&1 && jq -e . "$claude_theme" >/dev/null 2>&1; then
+  base=$(jq -r '.base' "$claude_theme")
+  if [ "$base" = "$MODE" ]; then
+    pass claude "theme is valid JSON, base ${base}"
+  else
+    fail claude "theme base is '${base}' but ${theme} is ${MODE}"
+  fi
+  if jq -e --arg bg "#${BG}" '.overrides.inverseText == $bg' "$claude_theme" >/dev/null 2>&1; then
+    pass claude "colours match ${theme}"
+  else
+    fail claude "theme colours are stale (inverseText is not #${BG})"
+  fi
+elif [ ! -f "$claude_theme" ]; then
+  fail claude "themes/omamac.json missing"
+else
+  fail claude "themes/omamac.json is not valid JSON"
+fi
+# The pointer. Without it the theme file is generated, correct, and unused.
+if grep -qs '"theme"[[:space:]]*:[[:space:]]*"custom:omamac"' "${CLAUDE_DIR}/settings.json"; then
+  pass claude "settings.json selects custom:omamac"
+else
+  fail claude "settings.json does not set \"theme\": \"custom:omamac\" — the generated theme is not being used"
+fi
+
+# ── macOS appearance ───────────────────────────────────────────────────────
+if command -v "$DEFAULTS" >/dev/null 2>&1; then
+  style=$("$DEFAULTS" read -g AppleInterfaceStyle 2>/dev/null)
+  actual=dark; [ "$style" = "Dark" ] || actual=light
+  if [ "$actual" = "$MODE" ]; then
+    pass macos "system appearance is ${actual}"
+  else
+    fail macos "system appearance is ${actual} but ${theme} is ${MODE}"
+  fi
+else
+  skip macos "defaults is not on PATH"
+fi
+
+# ── wallpaper ──────────────────────────────────────────────────────────────
+wp=$(omamac_state_get background)
+if [ -z "$wp" ]; then
+  skip bg "no wallpaper has been set"
+elif [ -f "$wp" ]; then
+  pass bg "wallpaper file exists"
+else
+  fail bg "recorded wallpaper is gone: ${wp}"
+fi
+
+# ── cache health ───────────────────────────────────────────────────────────
+# The failure shapes this project has actually produced: a zero-byte file left
+# behind by a conversion that failed after creating its output, and a .part
+# left by a download killed before its cleanup could run. Both look like valid
+# cache entries to every later reader.
+empties=$(find "$OMAMAC_CACHE" -type f -empty 2>/dev/null | wc -l | tr -d ' ')
+if [ "${empties:-0}" -eq 0 ]; then
+  pass cache "no zero-byte entries"
+else
+  fail cache "${empties} zero-byte file(s) under ${OMAMAC_CACHE} — a failed conversion left a stub that will be served as valid"
+fi
+parts=$(find "$OMAMAC_CACHE" -type f -name '*.part' 2>/dev/null | wc -l | tr -d ' ')
+if [ "${parts:-0}" -eq 0 ]; then
+  pass cache "no interrupted downloads"
+else
+  fail cache "${parts} leftover .part file(s) under ${OMAMAC_CACHE}"
+fi
+
+printf '\n'
+if [ "$fails" -eq 0 ]; then
+  printf 'All checks passed.\n'
+  exit 0
+fi
+printf '%d check(s) failed. Most drift is fixed by re-applying the theme:\n    omamac theme %s\n' "$fails" "$theme"
+exit 1
