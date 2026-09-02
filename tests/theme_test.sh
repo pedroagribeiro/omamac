@@ -9,7 +9,25 @@ setup_themes() {
   cp "$OMAMAC_ROOT/tests/fixtures/light/colors.toml" "$OMAMAC_THEMES_DIR/catppuccin-latte/"
   export OMAMAC_CONFIG_ROOT="$TMPDIR_TEST/config"
   export OMAMAC_KILL="true"        # never signal a real process from tests
-  export OMAMAC_OSASCRIPT="true"
+  # Setting the desktop picture is VERIFIED by reading it back, so a stub that
+  # only exits 0 can no longer stand in for osascript — it would report that
+  # macOS is showing nothing, and every wallpaper set would (correctly) fail.
+  # This one records what was set and reports it back, one entry per Space.
+  # The appearance call (render/macos) falls through and exits 0, as before.
+  cat > "$TMPDIR_TEST/osascript" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"set picture to"*)
+    printf '%s' "$*" | sed 's/.*set picture to "//; s/".*//' > "$OSA_STORE" ;;
+  *"get picture of every desktop"*)
+    [ -f "$OSA_STORE" ] || exit 0
+    v=$(cat "$OSA_STORE"); printf '%s, %s\n' "$v" "$v" ;;
+esac
+EOF
+  chmod +x "$TMPDIR_TEST/osascript"
+  export OMAMAC_OSASCRIPT="$TMPDIR_TEST/osascript" OSA_STORE="$TMPDIR_TEST/osa.store"
+  rm -f "$OSA_STORE"
+  export OMAMAC_DESKTOP_INTERVAL=0
   # Stub the process lookup too. Without this the tests read the REAL process
   # table, so which branch of ghostty_reload runs depends on whether the
   # developer happens to have Ghostty open.

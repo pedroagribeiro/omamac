@@ -211,7 +211,12 @@ hs = {
   json = { encode = stub_encode },
   execute = function(cmd) return "" end,
   hotkey = { bind = function() end },
-  screen = { mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end },
+  screen = {
+    mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
+    -- The host starts a display-change watcher at load; these harnesses are
+    -- about other behaviour and never fire it.
+    watcher = { new = function(fn) return { start = function(self) return self end } end },
+  },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
     new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
@@ -318,7 +323,12 @@ hs = {
   json = { encode = stub_encode },
   execute = function(cmd) return "" end,
   hotkey = { bind = function() end },
-  screen = { mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end },
+  screen = {
+    mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
+    -- The host starts a display-change watcher at load; these harnesses are
+    -- about other behaviour and never fire it.
+    watcher = { new = function(fn) return { start = function(self) return self end } end },
+  },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
     new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
@@ -449,7 +459,12 @@ hs = {
   base64 = { encode = function(b) return "B64<" .. #b .. ">" end },
   execute = function(cmd) return "" end,
   hotkey = { bind = function() end },
-  screen = { mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end },
+  screen = {
+    mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
+    -- The host starts a display-change watcher at load; these harnesses are
+    -- about other behaviour and never fire it.
+    watcher = { new = function(fn) return { start = function(self) return self end } end },
+  },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
     new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
@@ -560,7 +575,12 @@ hs = {
   json = { encode = stub_encode },
   execute = function(cmd) return "" end,
   hotkey = { bind = function() end },
-  screen = { mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end },
+  screen = {
+    mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
+    -- The host starts a display-change watcher at load; these harnesses are
+    -- about other behaviour and never fire it.
+    watcher = { new = function(fn) return { start = function(self) return self end } end },
+  },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
     new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
@@ -697,7 +717,12 @@ hs = {
   base64 = { encode = function(b) return "B64<" .. #b .. ">" end },
   execute = function(cmd) return "" end,
   hotkey = { bind = function() end },
-  screen = { mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end },
+  screen = {
+    mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
+    -- The host starts a display-change watcher at load; these harnesses are
+    -- about other behaviour and never fire it.
+    watcher = { new = function(fn) return { start = function(self) return self end } end },
+  },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
     new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
@@ -746,6 +771,116 @@ LUAEOF
   local starts; starts=$(printf '%s\n' "$out" | sed -n 's/^starts=//p')
   assert_eq "1" "$starts" \
     "a 22-item level must cost exactly ONE hs.task — hs.task drops the stdout of most of its children when a couple of dozen run at once, silently and with exit status 0"
+}
+
+# The display-change watcher. macOS restores its own remembered per-Space
+# wallpaper when the display configuration changes, overriding omamac's — and
+# the CLI cannot see that a display changed, so the host is the only place it
+# can be noticed. This drives the real callback and checks it reaches
+# `bg --reapply`, debounced.
+test_display_change_reasserts_the_wallpaper() {
+  local harness="$TMPDIR_TEST/screen_watcher_harness.lua"
+  cat > "$harness" <<'LUAEOF'
+package.loaded["hs.ipc"] = {}
+
+local commands = {}
+local watcherStarted = false
+local watcherFn = nil
+local timers = {}
+
+local fakeWebview = {}
+fakeWebview.__index = fakeWebview
+function fakeWebview:windowStyle() return self end
+function fakeWebview:allowTextEntry() return self end
+function fakeWebview:transparent() return self end
+function fakeWebview:level() return self end
+function fakeWebview:deleteOnClose() return self end
+function fakeWebview:html() return self end
+function fakeWebview:show() return self end
+function fakeWebview:bringToFront() return self end
+function fakeWebview:hswindow() return nil end
+function fakeWebview:delete() end
+function fakeWebview:evaluateJavaScript(js) end
+
+hs = {
+  ipc = {},
+  fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
+  json = { encode = function(t) return "{}" end },
+  base64 = { encode = function(b) return "B64" end },
+  execute = function(cmd) return "" end,
+  hotkey = { bind = function() end },
+  screen = {
+    mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
+    watcher = {
+      new = function(fn)
+        watcherFn = fn
+        return { start = function(self) watcherStarted = true; return self end }
+      end,
+    },
+  },
+  webview = {
+    usercontent = { new = function(name) return { setCallback = function(self, cb) end } end },
+    new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
+  },
+  drawing = { windowLevels = { modalPanel = 1 } },
+  alert = { show = function() end },
+  timer = {
+    -- Record the timer instead of waiting: the debounce is the behaviour under
+    -- test, so the harness fires it by hand.
+    doAfter = function(delay, fn)
+      local t = { delay = delay, fn = fn, stopped = false }
+      t.stop = function(self) self.stopped = true end
+      table.insert(timers, t)
+      return t
+    end,
+  },
+  task = {
+    new = function(path, doneCb, streamCb, args)
+      return { start = function() table.insert(commands, tostring(args and args[2] or "")) end }
+    end,
+  },
+}
+
+local ok, err = pcall(dofile, os.getenv("HAMMERSPOON_HOST"))
+if not ok then error("failed to load host under stubs: " .. tostring(err)) end
+
+io.write("watcher_started=" .. tostring(watcherStarted) .. "\n")
+io.write("watcher_registered=" .. tostring(watcherFn ~= nil) .. "\n")
+io.write("commands_before=" .. tostring(#commands) .. "\n")
+
+-- A single replug emits several callbacks in quick succession.
+watcherFn(); watcherFn(); watcherFn()
+io.write("timers_created=" .. tostring(#timers) .. "\n")
+local stopped = 0
+for _, t in ipairs(timers) do if t.stopped then stopped = stopped + 1 end end
+io.write("timers_stopped=" .. tostring(stopped) .. "\n")
+
+-- Fire only the surviving one, as a real debounce would.
+for _, t in ipairs(timers) do if not t.stopped then t.fn() end end
+io.write("commands_after=" .. tostring(#commands) .. "\n")
+io.write("cmd=" .. tostring(commands[1] or "NONE") .. "\n")
+LUAEOF
+
+  local out rc
+  out=$(OMAMAC_DIR="$OMAMAC_ROOT" HAMMERSPOON_HOST="$HOST" lua_run "$harness" 2>&1); rc=$?
+  if [ "$rc" -eq 127 ]; then
+    fail "no executing Lua interpreter available — cannot verify the screen watcher"
+    return
+  fi
+  assert_eq 0 "$rc" "screen-watcher harness must run cleanly, got: $out"
+  [ "$rc" -eq 0 ] || return
+
+  assert_contains "$out" "watcher_registered=true" "the host must register an hs.screen.watcher"
+  assert_contains "$out" "watcher_started=true" \
+    "the watcher must be started — an hs.screen.watcher that is never started silently never fires"
+  # Nothing until the debounce elapses...
+  assert_contains "$out" "commands_before=0"
+  # ...three callbacks must collapse into ONE surviving timer, or a replug
+  # rewrites the desktop several times over.
+  assert_contains "$out" "timers_stopped=2" "repeated display events must be coalesced"
+  assert_contains "$out" "commands_after=1" "a single replug must trigger exactly one re-assert"
+  assert_contains "$out" "'bg' '--reapply'" \
+    "the watcher must call bg --reapply, which is a no-op unless the wallpaper actually drifted"
 }
 
 run_tests

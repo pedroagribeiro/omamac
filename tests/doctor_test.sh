@@ -14,7 +14,22 @@ setup_healthy() {
   cp "$OMAMAC_ROOT/tests/fixtures/light/colors.toml" "$OMAMAC_THEMES_DIR/catppuccin-latte/"
   export OMAMAC_CONFIG_ROOT="$TMPDIR_TEST/config"
   export OMAMAC_CLAUDE_DIR="$TMPDIR_TEST/claude"
-  export OMAMAC_KILL="true" OMAMAC_OSASCRIPT="true"
+  export OMAMAC_KILL="true"
+  # An osascript that reports whatever was last set — doctor now asks macOS
+  # what it is actually showing, so "true" is no longer a sufficient stub.
+  cat > "$TMPDIR_TEST/osascript" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"set picture to"*)
+    printf '%s' "$*" | sed 's/.*set picture to "//; s/".*//' > "$OSA_STORE" ;;
+  *"get picture of every desktop"*)
+    [ -f "$OSA_STORE" ] || exit 0
+    v=$(cat "$OSA_STORE"); printf '%s, %s\n' "$v" "$v" ;;
+esac
+EOF
+  chmod +x "$TMPDIR_TEST/osascript"
+  export OMAMAC_OSASCRIPT="$TMPDIR_TEST/osascript" OSA_STORE="$TMPDIR_TEST/osa.store"
+  export OMAMAC_DESKTOP_INTERVAL=0
   printf '#!/usr/bin/env bash\nexit 0\n' > "$TMPDIR_TEST/ps-none"
   chmod +x "$TMPDIR_TEST/ps-none"
   export OMAMAC_PS="$TMPDIR_TEST/ps-none"
@@ -50,8 +65,8 @@ setup_healthy() {
   export OMAMAC_DEFAULTS="$TMPDIR_TEST/defaults-dark"
 
   printf 'wallpaper\n' > "$TMPDIR_TEST/wall.jpg"
-  omamac_state_set background "$TMPDIR_TEST/wall.jpg" 2>/dev/null \
-    || printf '%s\n' "$TMPDIR_TEST/wall.jpg" > "$OMAMAC_STATE/background"
+  printf '%s\n' "$TMPDIR_TEST/wall.jpg" > "$OMAMAC_STATE/background"
+  printf '%s' "$TMPDIR_TEST/wall.jpg" > "$OSA_STORE"   # macOS is showing it
 }
 
 doctor() { "$OMAMAC_BIN" doctor 2>&1; }
@@ -188,6 +203,16 @@ test_doctor_changes_nothing() {
   doctor >/dev/null
   after=$(find "$OMAMAC_CONFIG_ROOT" "$OMAMAC_STATE" "$OMAMAC_CLAUDE_DIR" -type f -exec shasum {} \; 2>/dev/null | sort)
   assert_eq "$before" "$after" "doctor must not modify anything it inspects"
+}
+
+
+# The check that would have caught the bug this all came from. The recorded
+# file existed and was perfectly valid; macOS was simply showing a previous
+# theme's wallpaper instead, and the old "does the file exist" check passed.
+test_detects_a_wallpaper_macos_is_not_actually_showing() {
+  setup_healthy
+  printf '%s' "/somewhere/else.jpg" > "$OSA_STORE"
+  assert_flags "bg.*showing a different wallpaper"
 }
 
 run_tests

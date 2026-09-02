@@ -26,6 +26,7 @@ CLAUDE_DIR="${OMAMAC_CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
 BAT="${OMAMAC_BAT:-bat}"
 GIT="${OMAMAC_GIT:-git}"
 DEFAULTS="${OMAMAC_DEFAULTS:-defaults}"
+OSASCRIPT="${OMAMAC_OSASCRIPT:-osascript}"
 
 fails=0
 
@@ -192,13 +193,31 @@ else
 fi
 
 # ── wallpaper ──────────────────────────────────────────────────────────────
+# Asks macOS what it is ACTUALLY showing, not just whether the recorded file
+# exists. That weaker check is why this whole class of drift hid: macOS
+# restores its own remembered per-Space picture when the display configuration
+# changes, so the recorded file stays perfectly valid while the desktop shows a
+# previous theme's wallpaper. Caught live exactly once state said tokyo-night
+# and both desktops were showing osaka-jade.
 wp=$(omamac_state_get background)
 if [ -z "$wp" ]; then
   skip bg "no wallpaper has been set"
-elif [ -f "$wp" ]; then
-  pass bg "wallpaper file exists"
-else
+elif [ ! -f "$wp" ]; then
   fail bg "recorded wallpaper is gone: ${wp}"
+elif ! command -v "$OSASCRIPT" >/dev/null 2>&1 && [ ! -x "$OSASCRIPT" ]; then
+  skip bg "osascript is not available"
+else
+  shown=$("$OSASCRIPT" -e 'tell application "System Events" to get picture of every desktop' 2>/dev/null |
+    tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$')
+  total=$(printf '%s\n' "$shown" | grep -c .)
+  match=$(printf '%s\n' "$shown" | grep -cxF "$wp")
+  if [ -z "$shown" ]; then
+    fail bg "could not read the desktop picture from macOS"
+  elif [ "$total" -eq "$match" ]; then
+    pass bg "wallpaper is showing on all ${total} desktop(s)"
+  else
+    fail bg "macOS is showing a different wallpaper on $((total - match)) of ${total} desktop(s) — run: omamac bg --reapply"
+  fi
 fi
 
 # ── cache health ───────────────────────────────────────────────────────────

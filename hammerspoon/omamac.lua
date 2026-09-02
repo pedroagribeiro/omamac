@@ -212,4 +212,34 @@ end
 hs.hotkey.bind({ "cmd", "alt" }, "o", openMenu)
 hs.hotkey.bind({ "cmd", "ctrl" }, "space", function() runAsync({ "bg", "--next" }) end)
 
-OmamacMenu = { open = openMenu, hide = hideMenu }
+-- Re-assert the wallpaper when displays change.
+--
+-- macOS keeps a wallpaper per Space, and the display configuration decides
+-- which Spaces exist: connecting a monitor creates them, disconnecting
+-- destroys and merges them. Across that transition macOS restores its OWN
+-- remembered picture for each Space, overriding whatever omamac set — which
+-- made the wallpaper silently revert to a previous theme's while every other
+-- target stayed on the current one. Observed live: state said tokyo-night
+-- while both desktops were showing osaka-jade's wallpaper.
+--
+-- This is the only place a display change is observable; the CLI has no way
+-- to know one happened. `bg --reapply` is a no-op when nothing has drifted,
+-- so this is safe to fire liberally.
+--
+-- Kept in a module-level local: an hs.screen.watcher that nothing references
+-- is garbage collected and silently stops firing.
+local screenWatcher = nil
+local reassertTimer = nil
+local function scheduleWallpaperReassert()
+  -- One connect or disconnect emits several callbacks, and the Spaces are not
+  -- settled when the first arrives. Coalesce them, and give macOS a moment to
+  -- finish rearranging before asking it to change anything.
+  if reassertTimer then reassertTimer:stop() end
+  reassertTimer = hs.timer.doAfter(3, function()
+    runAsync({ "bg", "--reapply" })
+  end)
+end
+screenWatcher = hs.screen.watcher.new(scheduleWallpaperReassert)
+screenWatcher:start()
+
+OmamacMenu = { open = openMenu, hide = hideMenu, reassert = scheduleWallpaperReassert }

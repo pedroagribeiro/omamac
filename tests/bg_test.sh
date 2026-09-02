@@ -8,13 +8,41 @@ setup_bg() {
   cp "$OMAMAC_ROOT/tests/fixtures/dark/colors.toml" "$OMAMAC_THEMES_DIR/tokyo-night/"
   export OMAMAC_CONFIG_ROOT="$TMPDIR_TEST/config"
   export OMAMAC_KILL="true"
+  # A stateful osascript stub, because setting the desktop picture is now
+  # VERIFIED by reading it back. It models the real thing: `set picture to X`
+  # records X, and `get picture of every desktop` returns a comma-separated
+  # path per Space. OSA_STALE > 0 makes the first N reads return the previous
+  # value, which is what the real API does — measured on a live machine, an
+  # immediate read-back returns the old path about two times in three.
   cat > "$TMPDIR_TEST/osascript" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >> "$OSA_LOG"
+case "$*" in
+  *"set picture to"*)
+    [ -f "$OSA_STORE" ] && cp "$OSA_STORE" "$OSA_STORE.prev"
+    printf '%s' "$*" | sed 's/.*set picture to "//; s/".*//' > "$OSA_STORE"
+    ;;
+  *"get picture of every desktop"*)
+    [ -f "$OSA_STORE" ] || exit 0
+    n=0; [ -f "$OSA_STALE_N" ] && n=$(cat "$OSA_STALE_N")
+    if [ "${OSA_STALE:-0}" -gt "$n" ] && [ -f "$OSA_STORE.prev" ]; then
+      printf '%s\n' "$(( n + 1 ))" > "$OSA_STALE_N"
+      v=$(cat "$OSA_STORE.prev")
+    else
+      v=$(cat "$OSA_STORE")
+    fi
+    # Two Spaces, as a two-display Mac reports.
+    printf '%s, %s\n' "$v" "$v"
+    ;;
+esac
 EOF
   chmod +x "$TMPDIR_TEST/osascript"
   export OMAMAC_OSASCRIPT="$TMPDIR_TEST/osascript" OSA_LOG="$TMPDIR_TEST/osa.log"
+  export OSA_STORE="$TMPDIR_TEST/osa.store" OSA_STALE_N="$TMPDIR_TEST/osa.stale" OSA_STALE=0
+  rm -f "$OSA_STORE" "$OSA_STORE.prev" "$OSA_STALE_N"
   : > "$OSA_LOG"
+  # No real sleeping in tests.
+  export OMAMAC_DESKTOP_INTERVAL=0
   mkdir -p "$OMAMAC_CACHE/backgrounds/tokyo-night"
   : > "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg"
   : > "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg"
@@ -294,6 +322,112 @@ test_bg_list_ignores_leftover_part_files() {
   touch "$OMAMAC_CACHE/backgrounds/tokyo-night/3-gamma.jpg.part"
   assert_eq "1-alpha.jpg
 2-beta.jpg" "$("$OMAMAC_BIN" bg --list)"
+}
+
+# ---------------------------------------------------------------------------
+# The desktop picture is VERIFIED, not assumed.
+#
+# `set_desktop` used to be `osascript ... 2>/dev/null || true`, and bg_set
+# recorded the state and logged success regardless. That is how the wallpaper
+# silently drifted out of step with the theme: macOS restores its own
+# remembered per-Space picture when the display configuration changes (Spaces
+# are created on connect, destroyed and merged on disconnect), overriding what
+# omamac set — and nothing noticed, because omamac had already written down
+# that it succeeded. Observed live: state said tokyo-night while both desktops
+# were showing osaka-jade's wallpaper.
+# ---------------------------------------------------------------------------
+
+test_set_fails_when_macos_does_not_take_the_picture() {
+  setup_bg
+  # An osascript that accepts the set and reports something else forever —
+  # exactly the shape of macOS overriding it.
+  cat > "$TMPDIR_TEST/osascript-ignores" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"get picture of every desktop"*) printf '/somewhere/else.jpg, /somewhere/else.jpg\n' ;;
+esac
+EOF
+  chmod +x "$TMPDIR_TEST/osascript-ignores"
+  export OMAMAC_OSASCRIPT="$TMPDIR_TEST/osascript-ignores"
+  local out rc
+  out=$("$OMAMAC_BIN" bg 2-beta.jpg 2>&1); rc=$?
+  assert_eq 1 "$rc" "a wallpaper macOS is not showing must be reported as a failure"
+  assert_contains "$out" "not showing it"
+}
+
+test_a_failed_set_is_not_recorded_as_current() {
+  setup_bg
+  "$OMAMAC_BIN" bg 1-alpha.jpg >/dev/null 2>&1     # succeeds, becomes current
+  cat > "$TMPDIR_TEST/osascript-ignores" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"get picture of every desktop"*) printf '/somewhere/else.jpg, /somewhere/else.jpg\n' ;;
+esac
+EOF
+  chmod +x "$TMPDIR_TEST/osascript-ignores"
+  export OMAMAC_OSASCRIPT="$TMPDIR_TEST/osascript-ignores"
+  "$OMAMAC_BIN" bg 2-beta.jpg >/dev/null 2>&1
+  # State must still name the wallpaper that actually took. Recording one that
+  # did not is the whole bug: nothing ever retries a success it thinks it had.
+  assert_contains "$("$OMAMAC_BIN" bg --current)" "1-alpha.jpg"
+  case "$("$OMAMAC_BIN" bg --current)" in
+    *2-beta.jpg*) fail "a wallpaper that never applied was recorded as current" ;;
+  esac
+}
+
+# `set picture` is asynchronous. Measured live: an immediate read-back returns
+# the PREVIOUS path about two times in three, converging on the second poll
+# (~0.3s), every time. Verification must poll — a single read would call a
+# successful set a failure most of the time.
+test_set_tolerates_a_stale_read_back() {
+  setup_bg
+  # A first set is required, or there is no PREVIOUS value for the stub to
+  # report and the staleness never actually happens — which is exactly how
+  # this test originally passed against a single-read implementation.
+  "$OMAMAC_BIN" bg 1-alpha.jpg >/dev/null 2>&1
+  export OSA_STALE=3          # the next three reads report the old value
+  rm -f "$OSA_STALE_N"
+  local out rc
+  out=$("$OMAMAC_BIN" bg 2-beta.jpg 2>&1); rc=$?
+  assert_eq 0 "$rc" "a set that lands after a few stale reads must succeed, got: $out"
+  assert_contains "$("$OMAMAC_BIN" bg --current)" "2-beta.jpg"
+}
+
+# --reapply is what the display-change watcher calls.
+test_reapply_restores_a_drifted_wallpaper() {
+  setup_bg
+  "$OMAMAC_BIN" bg 2-beta.jpg >/dev/null 2>&1
+  # Simulate macOS having replaced it behind omamac's back.
+  printf '/somewhere/else.jpg' > "$OSA_STORE"
+  : > "$OSA_LOG"
+  local out rc
+  out=$("$OMAMAC_BIN" bg --reapply 2>&1); rc=$?
+  assert_eq 0 "$rc"
+  assert_contains "$(cat "$OSA_LOG")" "set picture to"
+  assert_eq "$(cat "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg" >/dev/null; printf '%s' "$OMAMAC_CACHE/backgrounds/tokyo-night/2-beta.jpg")" \
+    "$(cat "$OSA_STORE")" "the recorded wallpaper must be put back"
+}
+
+# It runs on every display change, so it must be silent and do nothing when
+# there is nothing wrong — otherwise it churns the desktop on every replug.
+test_reapply_is_a_quiet_noop_when_nothing_drifted() {
+  setup_bg
+  "$OMAMAC_BIN" bg 2-beta.jpg >/dev/null 2>&1
+  : > "$OSA_LOG"
+  local out rc
+  out=$("$OMAMAC_BIN" bg --reapply 2>&1); rc=$?
+  assert_eq 0 "$rc"
+  case "$(cat "$OSA_LOG")" in
+    *"set picture to"*) fail "--reapply must not re-set a wallpaper that is already showing" ;;
+  esac
+}
+
+test_reapply_with_nothing_recorded_is_a_noop() {
+  setup_bg
+  rm -f "$OMAMAC_STATE/background"
+  local out rc
+  out=$("$OMAMAC_BIN" bg --reapply 2>&1); rc=$?
+  assert_eq 0 "$rc" "no wallpaper chosen yet must not be an error"
 }
 
 run_tests

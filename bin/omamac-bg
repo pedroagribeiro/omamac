@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# omamac-bg [file|--list|--current|--next]
+# omamac-bg [file|--list|--current|--next|--reapply]
 set -uo pipefail
 OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 source "${OMAMAC_DIR}/lib/log.sh"
@@ -9,6 +9,10 @@ source "${OMAMAC_DIR}/lib/state.sh"
 # there for why partial files must never appear under their final name.
 source "${OMAMAC_DIR}/lib/fetch.sh"
 OSASCRIPT="${OMAMAC_OSASCRIPT:-osascript}"
+# How long to wait for macOS to actually adopt a desktop picture. See
+# set_desktop for why this has to poll at all.
+OMAMAC_DESKTOP_TRIES="${OMAMAC_DESKTOP_TRIES:-20}"
+OMAMAC_DESKTOP_INTERVAL="${OMAMAC_DESKTOP_INTERVAL:-0.15}"
 THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
 
 current_theme() { omamac_state_get theme.name; }
@@ -53,18 +57,73 @@ bg_fetch() {
 # whatever exactly produced it.
 bg_list() { bg_fetch; ls -1 "$(bg_dir)" 2>/dev/null | grep -v '\.part$' | sort || true; }
 
+# What macOS reports for every Space, one path per line.
+desktop_pictures() {
+  "$OSASCRIPT" -e 'tell application "System Events" to get picture of every desktop' 2>/dev/null |
+    tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$'
+}
+
+# True only when EVERY Space is showing <path>. Anything less is drift: omamac
+# sets one wallpaper across all of them, so a partial match means something
+# else has been writing here too.
+desktops_showing() {
+  local want="$1" list total match
+  list=$(desktop_pictures)
+  [ -n "$list" ] || return 1
+  total=$(printf '%s\n' "$list" | grep -c .)
+  match=$(printf '%s\n' "$list" | grep -cxF "$want")
+  [ "$total" -gt 0 ] && [ "$total" -eq "$match" ]
+}
+
+# Set the picture on every Space and CONFIRM macOS took it.
+#
+# This used to be a fire-and-forget `osascript ... 2>/dev/null || true`, and
+# bg_set recorded success regardless. That is how the wallpaper silently drifted
+# out of step with the theme: macOS restores its own remembered per-Space
+# picture when the display configuration changes, overriding what omamac set,
+# and nothing noticed because omamac had already written down that it worked.
+#
+# Verification has to POLL. `set picture` is asynchronous: measured on a real
+# two-display Mac, an immediate read-back returns the PREVIOUS path about two
+# times in three, and the new one lands on the second poll (~0.3s) every time.
+# A single read would therefore call most successful sets a failure.
 set_desktop() {
-  # macOS keeps a wallpaper per Space; `every desktop` reaches existing Spaces.
-  "$OSASCRIPT" -e "tell application \"System Events\" to tell every desktop to set picture to \"$1\"" 2>/dev/null || true
+  local want="$1" i
+  "$OSASCRIPT" -e "tell application \"System Events\" to tell every desktop to set picture to \"$want\"" >/dev/null 2>&1
+  for i in $(seq 1 "$OMAMAC_DESKTOP_TRIES"); do
+    desktops_showing "$want" && return 0
+    sleep "$OMAMAC_DESKTOP_INTERVAL" 2>/dev/null || true
+  done
+  return 1
 }
 
 bg_set() {
   local wp="$1" file
   file="$(bg_dir)/${wp}"
   [ -f "$file" ] || { log_error "wallpaper not found: ${wp}"; return 1; }
-  set_desktop "$file"
+  if ! set_desktop "$file"; then
+    log_error "could not set wallpaper to ${wp}; macOS is not showing it"
+    return 1
+  fi
+  # Recorded only once it has actually taken. Writing state for a set that did
+  # not land is precisely what let the drift hide: nothing ever retries a
+  # success it believes it already had.
   omamac_state_set background "$file"
   log_info "Wallpaper set to ${wp}."
+}
+
+# Put the recorded wallpaper back if something else has changed it. Called by
+# the Hammerspoon host whenever the display configuration changes, which is
+# when macOS overrides it. Silent and does nothing when nothing is wrong — it
+# runs on every replug, so it must not churn the desktop.
+bg_reapply() {
+  local cur
+  cur=$(omamac_state_get background)
+  [ -n "$cur" ] || return 0
+  [ -f "$cur" ] || { log_warn "recorded wallpaper is gone: ${cur}"; return 0; }
+  desktops_showing "$cur" && return 0
+  log_info "Wallpaper drifted; restoring $(basename "$cur")."
+  set_desktop "$cur" || { log_error "could not restore wallpaper $(basename "$cur")"; return 1; }
 }
 
 bg_next() {
@@ -84,6 +143,7 @@ case "${1:-}" in
   --list)    bg_list ;;
   --current) omamac_state_get background ;;
   --next)    bg_next ;;
+  --reapply) bg_reapply ;;
   "")        omamac_state_get background ;;
   *)         bg_set "$1" ;;
 esac
