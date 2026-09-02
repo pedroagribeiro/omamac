@@ -80,4 +80,38 @@ test_is_light_falls_back_to_luminance_without_a_mode_key() {
   omamac_is_light "$light_f" || fail "mode-less light background must compute light via luminance"
 }
 
+# omamac_mix is Omarchy's mix_color (bin/omarchy-theme-set-templates), which
+# its themed templates lean on heavily. Argument order is load-bearing:
+# `mix A B 35%` is 65% A + 35% B, so reversing it produces a plausible-looking
+# but wrong colour that nothing else would catch.
+test_mix_interpolates_from_the_first_colour_toward_the_second() {
+  source "$OMAMAC_ROOT/lib/colors.sh"
+  # Halfway between black and white is mid grey, whichever way round.
+  assert_eq "#808080" "$(omamac_mix "#000000" "#ffffff" "50%")"
+  assert_eq "#808080" "$(omamac_mix "#ffffff" "#000000" "50%")"
+  # 0% and 100% are the endpoints, and this is what pins the direction.
+  assert_eq "#000000" "$(omamac_mix "#000000" "#ffffff" "0%")"
+  assert_eq "#ffffff" "$(omamac_mix "#000000" "#ffffff" "100%")"
+  # A quarter of the way from black toward white is 0x40.
+  assert_eq "#404040" "$(omamac_mix "#000000" "#ffffff" "25%")"
+}
+
+test_mix_accepts_fractions_and_bare_hex_and_clamps() {
+  source "$OMAMAC_ROOT/lib/colors.sh"
+  assert_eq "#808080" "$(omamac_mix "000000" "ffffff" "0.5")" "bare hex, fractional amount"
+  assert_eq "#ffffff" "$(omamac_mix "#000000" "#ffffff" "500%")" "over 100% clamps to the end colour"
+  assert_eq "#000000" "$(omamac_mix "#000000" "#ffffff" "-20%")" "below 0% clamps to the start colour"
+}
+
+test_mix_refuses_a_malformed_colour_rather_than_emitting_garbage() {
+  source "$OMAMAC_ROOT/lib/colors.sh"
+  local out rc
+  out=$(omamac_mix "not-a-colour" "#ffffff" "50%"); rc=$?
+  assert_eq 1 "$rc" "a malformed input must fail, so the caller can fall back"
+  assert_eq "" "$out"
+  out=$(omamac_mix "#000000" "12345" "50%"); rc=$?
+  assert_eq 1 "$rc" "a 5-digit hex is not a colour"
+  assert_eq "" "$out"
+}
+
 run_tests

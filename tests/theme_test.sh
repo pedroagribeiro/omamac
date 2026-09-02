@@ -216,4 +216,23 @@ EOF
     "the wallpaper must still land a little later, from the detached fetch"
 }
 
+# Claude Code must be retinted by a theme switch like every other target. It
+# is easy for a renderer to exist, be tested in isolation, and never actually
+# be wired into theme_set — this drives the real command.
+test_theme_switch_writes_the_claude_theme() {
+  setup_themes
+  export OMAMAC_CLAUDE_DIR="$TMPDIR_TEST/claude"
+  "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
+  local out="$OMAMAC_CLAUDE_DIR/themes/omamac.json"
+  [ -f "$out" ] || { fail "a theme switch did not write the Claude theme"; return; }
+  jq -e . "$out" >/dev/null 2>&1 || fail "the Claude theme is not valid JSON"
+  # Bound to the theme that was actually applied, not just any colours.
+  local want got
+  want=$(sed -n -E 's/^[[:space:]]*background[[:space:]]*=[[:space:]]*"?#?([0-9A-Fa-f]{6})"?.*/\1/p' \
+    "$OMAMAC_THEMES_DIR/tokyo-night/colors.toml" | head -1 | tr 'A-F' 'a-f')
+  got=$(jq -r '.overrides.inverseText' "$out" | tr -d '#')
+  assert_eq "$want" "$got" "inverseText must be the applied theme's background"
+  unset OMAMAC_CLAUDE_DIR
+}
+
 run_tests

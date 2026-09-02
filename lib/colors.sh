@@ -91,3 +91,38 @@ omamac_is_light() {
   lum=$(((2126 * r + 7152 * g + 722 * b) / 10000))
   [ "$lum" -ge 128 ]
 }
+
+# omamac_mix <#rrggbb|rrggbb> <#rrggbb|rrggbb> <amount> — linear interpolation
+# FROM the first colour TOWARD the second, printed as "#rrggbb".
+#
+# Amount is a percentage ("35%") or a fraction ("0.35"). This is Omarchy's
+# own mix_color (bin/omarchy-theme-set-templates), which its themed templates
+# use heavily — `{{ mix accent foreground 35% }}` is 65% accent, 35%
+# foreground, NOT a 35/65 split the other way, so the argument order matters.
+#
+# Prints nothing and returns 1 when either input is not a 6-digit hex colour,
+# so a caller can fall back rather than emit a malformed value.
+omamac_mix() {
+  local a="${1#\#}" b="${2#\#}" amount="$3"
+  case "$a" in [0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) ;; *) return 1 ;; esac
+  case "$b" in [0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) ;; *) return 1 ;; esac
+  awk -v start="$a" -v end="$b" -v amount="$amount" '
+    function hex_value(char) { return index("0123456789abcdef", tolower(char)) - 1 }
+    function hex_pair_to_int(hex, idx) {
+      return hex_value(substr(hex, idx, 1)) * 16 + hex_value(substr(hex, idx + 1, 1))
+    }
+    BEGIN {
+      if (amount ~ /%$/) { sub(/%$/, "", amount); amount = amount / 100 }
+      else { amount += 0; if (amount > 1) amount = amount / 100 }
+      if (amount < 0) amount = 0
+      if (amount > 1) amount = 1
+      sr = hex_pair_to_int(start, 1); sg = hex_pair_to_int(start, 3); sb = hex_pair_to_int(start, 5)
+      er = hex_pair_to_int(end, 1);   eg = hex_pair_to_int(end, 3);   eb = hex_pair_to_int(end, 5)
+      printf "#%02x%02x%02x\n",
+        int(sr * (1 - amount) + er * amount + 0.5),
+        int(sg * (1 - amount) + eg * amount + 0.5),
+        int(sb * (1 - amount) + eb * amount + 0.5)
+    }
+  '
+}
+

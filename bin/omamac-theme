@@ -7,6 +7,9 @@ source "${OMAMAC_DIR}/lib/state.sh"
 
 THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
 CONFIG_ROOT="${OMAMAC_CONFIG_ROOT:-$HOME/.config}"
+# Claude Code lives at ~/.claude, not under XDG config, and honours
+# CLAUDE_CONFIG_DIR — same override upstream's omarchy-theme-set-claude reads.
+CLAUDE_DIR="${OMAMAC_CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
 OMAMAC_KILL="${OMAMAC_KILL:-kill}"
 OMAMAC_PS="${OMAMAC_PS:-ps}"
 
@@ -100,22 +103,24 @@ theme_set() {
     log_info "Ghostty: applied ${name} (not running; applies on next launch)."
   fi
 
-  # nvim/btop/bat/macos write to distinct paths and don't depend on each
-  # other or on Ghostty, so run them concurrently rather than paying for
-  # four renderers sequentially. theme_set must still not return until all
-  # four are done — tests assert on their output files right after the
+  # nvim/btop/bat/claude/macos write to distinct paths and don't depend on
+  # each other or on Ghostty, so run them concurrently rather than paying for
+  # five renderers sequentially. theme_set must still not return until all
+  # five are done — tests assert on their output files right after the
   # command — so each is `wait`ed individually by its own pid: that is what
   # lets a failing renderer log its own specific warning instead of
-  # collapsing all four into one generic message.
-  "${OMAMAC_DIR}/render/nvim" "$dir" "$OMAMAC_STATE" & pid_nvim=$!
-  "${OMAMAC_DIR}/render/btop" "$dir" "$CONFIG_ROOT" & pid_btop=$!
-  "${OMAMAC_DIR}/render/bat" "$dir" "$CONFIG_ROOT" & pid_bat=$!
-  "${OMAMAC_DIR}/render/macos" "$dir" & pid_macos=$!
+  # collapsing all five into one generic message.
+  "${OMAMAC_DIR}/render/nvim"   "$dir" "$OMAMAC_STATE" & pid_nvim=$!
+  "${OMAMAC_DIR}/render/btop"   "$dir" "$CONFIG_ROOT"  & pid_btop=$!
+  "${OMAMAC_DIR}/render/bat"    "$dir" "$CONFIG_ROOT"  & pid_bat=$!
+  "${OMAMAC_DIR}/render/claude" "$dir" "$CLAUDE_DIR"   & pid_claude=$!
+  "${OMAMAC_DIR}/render/macos"  "$dir"                 & pid_macos=$!
 
-  wait "$pid_nvim"  || log_warn "nvim render failed"
-  wait "$pid_btop"  || log_warn "btop render failed"
-  wait "$pid_bat"   || log_warn "bat render failed"
-  wait "$pid_macos" || log_warn "could not set system appearance"
+  wait "$pid_nvim"   || log_warn "nvim render failed"
+  wait "$pid_btop"   || log_warn "btop render failed"
+  wait "$pid_bat"    || log_warn "bat render failed"
+  wait "$pid_claude" || log_warn "claude render failed"
+  wait "$pid_macos"  || log_warn "could not set system appearance"
 
   omamac_state_set theme.name "$name"
   apply_theme_wallpaper "$name"

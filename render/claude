@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# render/claude <theme-dir> <claude-dir>
+#
+# Writes <claude-dir>/themes/omamac.json — a Claude Code custom theme.
+#
+# Claude Code WATCHES its themes directory and hot-reloads on change, so a
+# running session retints without restarting. That is also why the file is
+# written atomically: a reader can pick it up mid-write, and a half-written
+# JSON theme is a parse error rather than a slightly-wrong colour.
+#
+# The key set is Omarchy's default/themed/claude.json.tpl, whose mappings this
+# reproduces, plus `fastMode` — which that template predates but this machine's
+# Claude Code supports (it appears in a hand-written theme already installed
+# here). Unknown override keys are ignored by Claude Code, so carrying the
+# union is safe in both directions.
+#
+# Selecting it is a one-time, separate step: `"theme": "custom:omamac"` in
+# ~/.claude/settings.json. omamac deliberately does not write that file —
+# under home-manager it is a read-only symlink into the Nix store, and the
+# pointer belongs in the dotfiles anyway. Only the theme file is generated.
+set -uo pipefail
+_here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "${_here}/lib/log.sh"
+source "${_here}/lib/colors.sh"
+
+theme_dir="$1"; claude_dir="$2"; toml="${theme_dir}/colors.toml"
+[ -f "$toml" ] || { log_error "no colors.toml in ${theme_dir}"; exit 1; }
+name=$(basename "$theme_dir")
+
+# Shared hex-with-fallback lookup — see lib/colors.sh:omamac_hex_or_warn.
+c() { omamac_hex_or_warn "$toml" "$1" "$name"; }
+# `mix A B pct`, resolving both operands through c() first. Falls back to the
+# first colour if the interpolation fails, so a missing key degrades to a
+# readable colour rather than an empty string in the JSON.
+m() {
+  local a b
+  a=$(c "$1"); b=$(c "$2")
+  omamac_mix "$a" "$b" "$3" || printf '%s' "$a"
+}
+
+if omamac_is_light "$toml"; then base="light"; else base="dark"; fi
+
+mkdir -p "${claude_dir}/themes"
+out="${claude_dir}/themes/omamac.json"
+tmp="${claude_dir}/themes/.omamac.json.$$"
+
+cat > "$tmp" <<EOF
+{
+  "name": "omamac",
+  "base": "${base}",
+  "overrides": {
+    "claude": "$(c accent)",
+    "claudeShimmer": "$(m accent foreground 35%)",
+    "text": "$(c foreground)",
+    "inverseText": "$(c background)",
+    "inactive": "$(m foreground background 40%)",
+    "inactiveShimmer": "$(m foreground background 25%)",
+    "subtle": "$(c muted)",
+    "suggestion": "$(c cyan)",
+    "permission": "$(c blue)",
+    "permissionShimmer": "$(m blue foreground 35%)",
+    "remember": "$(c yellow)",
+    "success": "$(c green)",
+    "error": "$(c red)",
+    "warning": "$(c yellow)",
+    "warningShimmer": "$(m yellow foreground 35%)",
+    "merged": "$(c magenta)",
+    "promptBorder": "$(c accent)",
+    "promptBorderShimmer": "$(m accent foreground 35%)",
+    "planMode": "$(c cyan)",
+    "autoAccept": "$(c yellow)",
+    "fastMode": "$(c bright_yellow)",
+    "bashBorder": "$(c bright_yellow)",
+    "ide": "$(c bright_cyan)",
+    "diffAdded": "$(m background green 15%)",
+    "diffRemoved": "$(m background red 15%)",
+    "diffAddedDimmed": "$(m background green 8%)",
+    "diffRemovedDimmed": "$(m background red 8%)",
+    "diffAddedWord": "$(m background green 32%)",
+    "diffRemovedWord": "$(m background red 32%)",
+    "userMessageBackground": "$(m background foreground 6%)",
+    "userMessageBackgroundHover": "$(m background foreground 10%)",
+    "bashMessageBackgroundColor": "$(m background foreground 6%)",
+    "memoryBackgroundColor": "$(m background foreground 6%)",
+    "selectionBg": "$(c selection_background)",
+    "rate_limit_fill": "$(c accent)",
+    "rate_limit_empty": "$(m background foreground 20%)",
+    "briefLabelYou": "$(c yellow)",
+    "briefLabelClaude": "$(c accent)"
+  }
+}
+EOF
+
+# mv within one directory is atomic, so a watching Claude Code never observes
+# a partial file under the real name — the same discipline lib/fetch.sh uses
+# for downloads, and for the same reason.
+mv -f "$tmp" "$out"
