@@ -106,11 +106,13 @@ theme_set() {
   font=$(omamac_state_get font)
   font_size=$(omamac_state_get font.size)
   opacity=$(omamac_state_get opacity)
+  padding=$(omamac_state_get padding)
+  blur=$(omamac_state_get blur)
 
   # Ghostty first, and reload it immediately: it's the one renderer the user
   # is looking at, so time-to-visible-change must not wait on the other four
   # renderers, the state write, or a wallpaper fetch.
-  "${OMAMAC_DIR}/render/ghostty" "$dir" "$CONFIG_ROOT" "$font" "$font_size" "$opacity" || log_warn "ghostty render failed"
+  "${OMAMAC_DIR}/render/ghostty" "$dir" "$CONFIG_ROOT" "$font" "$font_size" "$opacity" "$padding" "$blur" || log_warn "ghostty render failed"
   if ghostty_reload; then
     log_info "Ghostty: reloaded ${name}."
   else

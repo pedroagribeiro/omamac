@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# render/ghostty <theme-dir> <config-root> [font-family] [font-size] [opacity-percent]
+# render/ghostty <theme-dir> <config-root> [font-family] [font-size] [opacity-percent] [padding] [blur]
 set -uo pipefail
 _here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "${_here}/lib/log.sh"
 source "${_here}/lib/colors.sh"
 
 theme_dir="$1"; root="$2"; font="${3:-}"; size="${4:-}"; opacity="${5:-}"
+padding="${6:-}"; blur="${7:-}"
 toml="${theme_dir}/colors.toml"
 [ -f "$toml" ] || { log_error "no colors.toml in ${theme_dir}"; exit 1; }
 
@@ -57,5 +58,16 @@ c() { omamac_hex_or_warn "$toml" "$1" "$(basename "$theme_dir")"; }
   # silently leave the terminal transparent.
   if [ -n "$opacity" ]; then
     printf 'background-opacity = %s\n' "$(awk -v p="$opacity" 'BEGIN { printf "%.2f", p / 100 }')"
+  fi
+  # Both axes move together: omamac offers one padding, not two.
+  if [ -n "$padding" ]; then
+    printf 'window-padding-x = %s\n' "$padding"
+    printf 'window-padding-y = %s\n' "$padding"
+  fi
+  # `background-blur = <n>` rather than the legacy background-blur-radius:
+  # the radius form is not in Ghostty's current option set, only the numeric
+  # background-blur is, and it both enables the blur and sets its radius.
+  if [ -n "$blur" ]; then
+    printf 'background-blur = %s\n' "$blur"
   fi
 } > "${root}/ghostty/omamac.conf"

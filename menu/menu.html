@@ -319,7 +319,9 @@
   };
   // Ghostty's own settings. The font FAMILY is not one of them — see the
   // `font` level.
-  const GHOSTTY_ICONS = { Size: "\u{f034}", Opacity: "\u{f042}" };
+  const GHOSTTY_ICONS = {
+    Size: "\u{f034}", Opacity: "\u{f042}", Padding: "\u{f065e}", Blur: "\u{f0c1c}",
+  };
   const AEROSPACE_ICONS = { Gaps: "\u{f0b0c}", Workspaces: "\u{f0b0c}" };
   // Inside Font. Family reuses the Font glyph; Size is U+F034, fa-text-height.
   const FONT_MENU_ICONS = { Family: "\u{e659}", Size: "\u{f034}" };
@@ -423,6 +425,26 @@
       current: () => DATA.theme.current || "",
       items: () => DATA.theme.options || [],
     },
+    // Space INSIDE the terminal window, the counterpart to AeroSpace's gaps
+    // between windows — the two are usually tuned together.
+    padding: {
+      crumb: "Padding", cmd: "padding", parent: "ghostty",
+      current: () => String(DATA.padding?.current || ""),
+      items: () => DATA.padding?.options || [],
+      icon: (name) =>
+        name === String(DATA.padding?.current || "") ? CURRENT_MARK : GHOSTTY_ICONS.Padding,
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
+    },
+    // Only visible with the background below full opacity, which is what
+    // Opacity above is for.
+    blur: {
+      crumb: "Blur", cmd: "blur", parent: "ghostty",
+      current: () => String(DATA.blur?.current || ""),
+      items: () => DATA.blur?.options || [],
+      icon: (name) =>
+        name === String(DATA.blur?.current || "") ? CURRENT_MARK : GHOSTTY_ICONS.Blur,
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
+    },
     bg: {
       crumb: "Background", cmd: "bg", picker: "bg", labels: false, parent: "root",
       // bg.current is an absolute path; the options are basenames.
@@ -489,9 +511,9 @@
     },
     ghostty: {
       crumb: "Ghostty", parent: "apps",
-      items: () => ["Size", "Opacity"],
+      items: () => ["Size", "Opacity", "Padding", "Blur"],
       icon: (name) => GHOSTTY_ICONS[name] || "",
-      into: { Size: "fontsize", Opacity: "opacity" },
+      into: { Size: "fontsize", Opacity: "opacity", Padding: "padding", Blur: "blur" },
     },
     // `width` follows Menu.qml:111, which gives style.font (and the
     // screen-record menu, which omamac has no equivalent of) 520 and every

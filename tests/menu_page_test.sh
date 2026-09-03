@@ -498,10 +498,11 @@ test_ghostty_groups_its_settings_together() {
   fi
   local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Menlo"]},"fontSize":{"current":"16","options":["16"]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "ghostty-menu-report")
-  # Ghostty's PER-APP settings. The font family is not one of them: it is a
+  # Ghostty's PER-APP settings — the point size, transparency, the padding
+  # inside the window, and the blur behind it. The font family is not one of them: it is a
   # system-wide choice that an editor added later shares, so it lives at the
   # root — the same shape omarchy-menu.jsonc gives style.font.
-  assert_eq '["Size","Opacity"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
+  assert_eq '["Size","Opacity","Padding","Blur"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
   # Entering Font must NOT apply anything — it is a submenu, and a stray
   # apply here would try to set a font family literally called "Family".
   assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "apply")] | length')" \
@@ -521,7 +522,7 @@ test_escape_walks_up_one_level_and_keeps_its_place() {
   local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Menlo"]},"fontSize":{"current":"16","options":["14","16"]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "size-then-escape")
   # Back at Font, not at the root...
-  assert_eq '["Size","Opacity"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+  assert_eq '["Size","Opacity","Padding","Blur"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
     "Escape from Size must land on Ghostty, not jump to the root"
   # ...with Size still highlighted, so the way back in is where you left it.
   assert_eq "Size" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')"

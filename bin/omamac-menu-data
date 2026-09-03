@@ -16,6 +16,8 @@ theme_cur=$("${OMAMAC_DIR}/bin/omamac-theme" --current)
 font_cur=$("${OMAMAC_DIR}/bin/omamac-font" --current)
 size_cur=$("${OMAMAC_DIR}/bin/omamac-font-size" --current)
 opacity_cur=$("${OMAMAC_DIR}/bin/omamac-opacity" --current)
+padding_cur=$("${OMAMAC_DIR}/bin/omamac-padding" --current)
+blur_cur=$("${OMAMAC_DIR}/bin/omamac-blur" --current)
 gaps_cur=$("${OMAMAC_DIR}/bin/omamac-aerospace" --current)
 # "<id>=<monitor>" lines -> [{id, monitor}], so the menu can label each row
 # with the monitor it is pinned to and check the right one a level down.
@@ -46,10 +48,13 @@ jq -n -c \
   --arg oc "$opacity_cur" --argjson oo "$("${OMAMAC_DIR}/bin/omamac-opacity" --list | arr)" \
   --arg gc "$gaps_cur"    --argjson go "$("${OMAMAC_DIR}/bin/omamac-aerospace" --list | arr)" \
   --argjson wsl "$ws_json" --argjson wsm "$("${OMAMAC_DIR}/bin/omamac-aerospace" --monitors | arr)" \
+  --arg pc "$padding_cur" --argjson po "$("${OMAMAC_DIR}/bin/omamac-padding" --list | arr)" \
+  --arg blc "$blur_cur"   --argjson blo "$("${OMAMAC_DIR}/bin/omamac-blur"    --list | arr)" \
   --arg bc "$bg_cur"    --argjson bo "$("${OMAMAC_DIR}/bin/omamac-bg"    --list | arr)" \
   --arg bgc "$bg_color" --arg fgc "$fg_color" --arg ac "$accent_color" --arg selc "$sel_color" \
   '{theme:{current:$tc,options:$to},font:{current:$fc,options:$fo},
     fontSize:{current:$sc,options:$so},opacity:{current:$oc,options:$oo},
     gaps:{current:$gc,options:$go},workspaces:{list:$wsl,monitors:$wsm},
+    padding:{current:$pc,options:$po},blur:{current:$blc,options:$blo},
     bg:{current:$bc,options:$bo},
     colors:{background:$bgc,foreground:$fgc,accent:$ac,selection_background:$selc}}'

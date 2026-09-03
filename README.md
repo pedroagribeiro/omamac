@@ -222,13 +222,11 @@ rather than a theme property, so it survives theme switches — Omarchy has no
 equivalent (its own "Transparency" entry toggles the Quickshell bar, not the
 terminal), so this is omamac's own.
 
-Transparency alone can be hard to read. Ghostty's `background-blur` pairs well
-with it and omamac does not touch that, so set it once in your own config:
-
-```
-background-blur = true
-background-blur-radius = 20
-```
+Transparency alone can be hard to read, so **Blur** sits beside it
+(`background-blur`, 0–40) — it only shows through a background below full
+opacity. **Padding** (`window-padding`, 0–30) is the space inside the terminal
+window, the counterpart to AeroSpace's gaps between windows; the two are
+usually worth tuning together.
 
 ### Slack
 

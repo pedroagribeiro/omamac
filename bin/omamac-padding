@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# omamac-padding [value|--list|--current]
+#
+# A Ghostty integer setting omamac owns, in the same shape as omamac-opacity:
+# recorded in state, written into omamac.conf, surviving every theme switch.
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+CONFIG_ROOT="${OMAMAC_CONFIG_ROOT:-$HOME/.config}"
+
+MIN=0
+MAX=30
+STEP=2
+DEFAULT=12
+STATE_KEY="padding"
+
+padding_list() { seq "$MIN" "$STEP" "$MAX"; }
+
+# The value in effect: what was chosen, else what the user's own Ghostty config
+# declares, else Ghostty's default. Reporting something concrete is what lets
+# the picker mark a row the first time it is opened.
+padding_current() {
+  local v config
+  v=$(omamac_state_get "$STATE_KEY")
+  if [ -n "$v" ]; then printf '%s\n' "$v"; return 0; fi
+  config="${CONFIG_ROOT}/ghostty/config"
+  # A missing config is not an error; see the same guard in omamac-font-size,
+  # where sed failing under pipefail made --current exit non-zero.
+  [ -f "$config" ] || { printf '%s\n' "$DEFAULT"; return 0; }
+  v=$(sed -n -E 's/^[[:space:]]*window-padding(-x)?[[:space:]]*=[[:space:]]*([0-9]+).*/\2/p' \
+    "$config" 2>/dev/null | tail -1)
+  printf '%s\n' "${v:-$DEFAULT}"
+}
+
+padding_set() {
+  local value="$1" theme prev
+  case "$value" in
+    ''|*[!0-9]*) log_error "Padding must be a whole number: ${value}"; return 1 ;;
+  esac
+  if [ "$value" -lt "$MIN" ] || [ "$value" -gt "$MAX" ]; then
+    log_error "Padding must be between ${MIN} and ${MAX}: ${value}"
+    return 1
+  fi
+  prev=$(omamac_state_get "$STATE_KEY")
+  omamac_state_set "$STATE_KEY" "$value"
+  theme=$(omamac_state_get theme.name)
+  if [ -n "$theme" ]; then
+    if ! "${OMAMAC_DIR}/bin/omamac-theme" "$theme"; then
+      if [ -n "$prev" ]; then omamac_state_set "$STATE_KEY" "$prev"
+      else omamac_state_clear "$STATE_KEY"; fi
+      log_error "could not apply Padding ${value}; reverted to ${prev:-default}"
+      return 1
+    fi
+  fi
+  log_info "Padding set to ${value}."
+}
+
+case "${1:-}" in
+  --list)    padding_list ;;
+  --current) padding_current ;;
+  "")        padding_current ;;
+  *)         padding_set "$1" ;;
+esac
