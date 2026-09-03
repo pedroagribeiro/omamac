@@ -318,6 +318,8 @@
   const CAPTURE_ICONS = {
     Screenshot: "\u{f030}", Record: "\u{f03d}", "Stop Recording": "\u{f03d}",
     "With no audio": "\u{f03d}", "With microphone audio": "\u{f03d}",
+    // trigger.capture.color, U+F00C9 — verified present in the Nerd Font.
+    Color: "\u{f00c9}",
   };
   // One per application under Applications. Adding an app is an entry here, in
   // that level's `items`, and either `into` (it has settings of its own) or
@@ -468,14 +470,17 @@
       // menu-data answers the same question for us, so the row exists only
       // while there is something to stop.
       items: () => DATA.capture?.recording
-        ? ["Screenshot", "Stop Recording", "Record"]
-        : ["Screenshot", "Record"],
+        ? ["Screenshot", "Stop Recording", "Record", "Color"]
+        : ["Screenshot", "Record", "Color"],
       icon: (name) => CAPTURE_ICONS[name] || "",
       into: { Record: "record" },
       // Rows that hand the host a message of their own rather than applying a
       // value: both of these have to run the region picker first, which lives
       // in the host, not here.
-      sends: { Screenshot: { action: "capture", kind: "screenshot" } },
+      sends: {
+        Screenshot: { action: "capture", kind: "screenshot" },
+        Color: { action: "capture", kind: "color" },
+      },
       runs: { "Stop Recording": ["capture", "--stop"] },
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },

@@ -680,13 +680,13 @@ CAPTURE_REC='{"theme":{"current":"","options":[]},"font":{"current":"","options"
 
 test_capture_hides_the_stop_row_when_nothing_is_recording() {
   local out; out=$(run_driver "$CAPTURE_IDLE" "capture-report")
-  assert_eq '["Screenshot","Record"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+  assert_eq '["Screenshot","Record","Color"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
     "with nothing recording there is nothing to stop"
 }
 
 test_capture_shows_the_stop_row_while_recording() {
   local out; out=$(run_driver "$CAPTURE_REC" "capture-report")
-  assert_eq '["Screenshot","Stop Recording","Record"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+  assert_eq '["Screenshot","Stop Recording","Record","Color"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
     "Omarchy puts the stop row between Screenshot and Screenrecord"
 }
 
@@ -694,7 +694,7 @@ test_capture_shows_the_stop_row_while_recording() {
 # omarchy-menu.jsonc.
 test_capture_rows_carry_omarchys_glyphs() {
   local out; out=$(run_driver "$CAPTURE_REC" "capture-report")
-  assert_eq '["\uf030","\uf03d","\uf03d"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+  assert_eq '["\uf030","\uf03d","\uf03d","\udb80\udcc9"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
     "capture glyphs must be the ones upstream uses"
 }
 
@@ -730,7 +730,7 @@ test_stop_runs_the_command_directly() {
 # rather than closing outright.
 test_escape_from_record_returns_to_capture() {
   local out; out=$(run_driver "$CAPTURE_IDLE" "record-then-escape")
-  assert_eq '["Screenshot","Record"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+  assert_eq '["Screenshot","Record","Color"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
     "Escape from Record goes back to Capture"
   assert_eq 'Record' "$(printf '%s' "$out" | jq -r '[.list[] | select(.on) | .name] | .[0]')" \
     "and lands on the row it came from"
@@ -752,6 +752,28 @@ test_the_capture_card_keeps_the_default_width() {
   local out; out=$(run_driver "$CAPTURE_IDLE" "capture-report")
   assert_eq "300px" "$(printf '%s' "$out" | jq -r '.cardWidth')" \
     "only style.font and the record menu are widened"
+}
+
+# Upstream's Capture menu ends with Color (trigger.capture.color), after the
+# record entries. It has nothing to pick a rectangle for, so like Screenshot it
+# hands the host a message rather than an apply.
+test_capture_offers_a_colour_picker_last() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "capture-report")
+  assert_eq '["Screenshot","Record","Color"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+    "Color comes after Record, as it does upstream"
+}
+
+test_colour_asks_the_host_to_pick_a_point() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "capture-color")
+  assert_eq '{"action":"capture","kind":"color"}' "$(printf '%s' "$out" | jq -c '.[-1]')" \
+    "Color must post a capture message of its own kind"
+}
+
+test_the_colour_row_carries_omarchys_glyph() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "capture-report")
+  # U+F00C9 sits above the BMP; jq -a spells it as a surrogate pair.
+  assert_eq '"\udb80\udcc9"' "$(printf '%s' "$out" | jq -a -c '[.list[] | select(.name == "Color") | .icon] | .[0]')" \
+    "U+F00C9, from omarchy-menu.jsonc"
 }
 
 run_tests

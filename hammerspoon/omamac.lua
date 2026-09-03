@@ -265,12 +265,24 @@ local function onMessage(message)
     if captureTimer then captureTimer:stop() end
     captureTimer = hs.timer.doAfter(PANEL_CLEAR_DELAY, function()
       local shot = (b.kind == "screenshot")
-      -- The selection is drawn in the theme's accent, so the picker looks like
-      -- the menu it came from. rgb()'s fallback is a HEX STRING, not a colour
-      -- table: it substitutes the fallback for the value and then indexes it as
-      -- a string, so a table there crashes on exactly the themes that have no
-      -- accent to read.
+      -- The picker is drawn in the theme's accent, so it looks like the menu it
+      -- came from. rgb()'s fallback is a HEX STRING, not a colour table: it
+      -- substitutes the fallback for the value and then indexes it as a string,
+      -- so a table there crashes on exactly the themes that have no accent to
+      -- read. Computed before the branch below, which also needs it.
       local stroke = rgb(themeStyle and themeStyle.colors and themeStyle.colors.accent, "#ffffff")
+      -- Colour picking has no rectangle and nothing to capture afterwards: the
+      -- picker reads the pixel off the freeze and hands back the hex.
+      if b.kind == "color" then
+        Region.pickPoint({ stroke = stroke }, function(hex)
+          if not hex then return end
+          runAsync({ "capture", "--color", hex }, function(_, stdout)
+            local msg = (stdout or ""):gsub("%s+$", "")
+            if msg ~= "" then hs.alert.show(msg, alertStyle()) end
+          end)
+        end)
+        return
+      end
       Region.pick("smart",
         -- A screenshot is taken FROM the frozen screen, so the freeze outlives
         -- the pick; a recording must see live content, so it does not.

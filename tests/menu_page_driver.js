@@ -322,6 +322,12 @@ switch (scenario) {
     fireKey('ArrowDown'); fireKey('Enter');      // Capture
     fireKey('ArrowDown'); fireKey('Enter');      // Stop Recording (only while recording)
     break;
+  case 'capture-color':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('Enter');      // Capture
+    fireKey('ArrowDown'); fireKey('ArrowDown');  // Screenshot -> Record -> Color
+    fireKey('Enter');
+    break;
   case 'capture-record-report':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('ArrowDown'); fireKey('Enter');      // Capture

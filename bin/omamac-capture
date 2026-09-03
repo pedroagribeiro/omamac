@@ -28,6 +28,7 @@ source "${OMAMAC_DIR}/lib/state.sh"
 
 SCREENCAPTURE="${OMAMAC_SCREENCAPTURE:-/usr/sbin/screencapture}"
 OSASCRIPT="${OMAMAC_OSASCRIPT:-osascript}"
+PBCOPY="${OMAMAC_PBCOPY:-pbcopy}"
 OMAMAC_PS="${OMAMAC_PS:-ps}"
 OMAMAC_KILL="${OMAMAC_KILL:-kill}"
 
@@ -107,6 +108,25 @@ copy_image() {
     -e 'on run argv' \
     -e 'set the clipboard to (read (POSIX file (item 1 of argv)) as «class PNGf»)' \
     -e 'end run' "$1" >/dev/null 2>&1
+}
+
+# The colour the picker read out of the frozen screen. omamac does not sample
+# it here: the pixel the user clicked belongs to the image they were looking at,
+# and re-reading the live screen afterwards could hand back a different one.
+# This validates, normalises and copies — the same division of labour as
+# --region, where the picker supplies the value and this does the work.
+colour() {
+  local hex="$1"
+  [[ $hex =~ ^#[0-9a-fA-F]{6}$ ]] || { log_error "not a colour: ${hex}"; return 1; }
+  # Lowercase, because every hex omamac emits elsewhere is lowercase and a
+  # value pasted into a config next to them should not look foreign.
+  hex=$(printf '%s' "$hex" | tr 'A-F' 'a-f')
+  # No trailing newline: this gets pasted into a config or a colour field.
+  if ! printf '%s' "$hex" | "$PBCOPY" 2>/dev/null; then
+    log_error "could not copy to the clipboard"
+    return 1
+  fi
+  printf '%s copied\n' "$hex"
 }
 
 screenshot() {
@@ -214,6 +234,7 @@ usage() {
   cat >&2 <<'EOF'
 omamac capture --screenshot [--region "X,Y WxH"] [--copy|--save]
                --record     [--region "X,Y WxH"] [--audio]
+               --color      "#rrggbb"
                --stop
                --status
 EOF
@@ -221,12 +242,14 @@ EOF
 
 MODE=""
 REGION=""
+COLOUR=""
 AUDIO="false"
 PROCESSING="both"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --screenshot|--record|--stop|--status) MODE="${1#--}" ;;
+    --color|--colour) MODE="colour"; COLOUR="${2:-}"; shift ;;
     --region) REGION="${2:-}"; shift ;;
     --audio)  AUDIO="true" ;;
     --copy)   PROCESSING="copy" ;;
@@ -238,6 +261,7 @@ done
 
 case "$MODE" in
   screenshot) screenshot "$REGION" "$PROCESSING" ;;
+  colour)     colour "$COLOUR" ;;
   record)
     # Upstream's screenrecording script is a TOGGLE: invoked while a recording
     # is running it stops it rather than starting a second one. Same here, so

@@ -369,4 +369,56 @@ PSSTUB
   "$OMAMAC_BIN" capture --stop >/dev/null 2>&1
 }
 
+# ------------------------------------------------------------------ colour --
+
+setup_colour() {
+  setup_capture
+  printf '#!/usr/bin/env bash\ncat > "$PB_OUT"\n' > "$TMPDIR_TEST/pbcopy"
+  chmod +x "$TMPDIR_TEST/pbcopy"
+  export OMAMAC_PBCOPY="$TMPDIR_TEST/pbcopy" PB_OUT="$TMPDIR_TEST/clipboard"
+  rm -f "$PB_OUT"
+}
+
+test_a_colour_goes_to_the_clipboard_verbatim() {
+  setup_colour
+  "$OMAMAC_BIN" capture --color "#a1b2c3" >/dev/null
+  assert_eq "#a1b2c3" "$(cat "$PB_OUT")" "the picked colour must reach the clipboard"
+  # No trailing newline: this gets pasted into a config field.
+  [ "$(wc -l < "$PB_OUT" | tr -d ' ')" -eq 0 ] || fail "the copied colour must not end in a newline"
+}
+
+# Every hex omamac emits elsewhere is lowercase; a value pasted next to them
+# should not look foreign.
+test_a_colour_is_normalised_to_lowercase() {
+  setup_colour
+  local out; out=$("$OMAMAC_BIN" capture --color "#A1B2C3")
+  assert_eq "#a1b2c3" "$(cat "$PB_OUT")" "uppercase input must be lowercased on the clipboard"
+  assert_contains "$out" "#a1b2c3"
+}
+
+test_a_colour_reports_itself_on_stdout() {
+  setup_colour
+  # The menu has closed by the time this runs; stdout is the alert.
+  assert_contains "$("$OMAMAC_BIN" capture --color '#00ff88')" "#00ff88"
+}
+
+test_a_malformed_colour_is_refused_and_never_reaches_the_clipboard() {
+  setup_colour
+  local bad
+  for bad in "ff0000" "#f00" "#gggggg" "#1234567" "" "; rm -rf /"; do
+    "$OMAMAC_BIN" capture --color "$bad" >/dev/null 2>&1 \
+      && fail "'$bad' must be refused"
+    [ ! -f "$PB_OUT" ] || fail "'$bad' must not reach the clipboard"
+  done
+}
+
+test_a_failed_copy_is_reported_not_silently_dropped() {
+  setup_colour
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TMPDIR_TEST/pbcopy"
+  chmod +x "$TMPDIR_TEST/pbcopy"
+  local out; out=$("$OMAMAC_BIN" capture --color "#a1b2c3" 2>/dev/null)
+  [ $? -ne 0 ] || fail "a failed copy must exit non-zero"
+  assert_eq "" "$out" "a failed copy must not claim the colour was copied"
+}
+
 run_tests

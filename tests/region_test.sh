@@ -123,4 +123,85 @@ LUA
 )" "a 2x2 twitch is a click; a 30x30 drag is a selection"
 }
 
+# ------------------------------------------------------------------- colour --
+
+# hs colour components are 0..1 floats. Truncating instead of rounding turns
+# white into #fefefe, which is the kind of wrong that looks right.
+test_full_and_empty_channels_are_exact() {
+  assert_eq "#ffffff|#000000|#ff0000|#0000ff" "$(region_lua <<'LUA'
+print(table.concat({
+  R._hexOf({red = 1, green = 1, blue = 1}),
+  R._hexOf({red = 0, green = 0, blue = 0}),
+  R._hexOf({red = 1, green = 0, blue = 0}),
+  R._hexOf({red = 0, green = 0, blue = 1}),
+}, "|"))
+LUA
+)" "the extremes must be exact"
+}
+
+test_channels_are_rounded_not_truncated() {
+  # 0.999 * 255 = 254.7. Truncation gives fe; rounding gives ff.
+  assert_eq "#ffffff" "$(region_lua <<'LUA'
+print(R._hexOf({red = 0.999, green = 0.999, blue = 0.999}))
+LUA
+)" "0.999 must round up to ff, not truncate to fe"
+}
+
+test_channels_out_of_range_are_clamped() {
+  # A colour converted between spaces can land marginally outside 0..1, and
+  # string.format("%02x", 256) is not a colour.
+  assert_eq "#ff0000" "$(region_lua <<'LUA'
+print(R._hexOf({red = 1.02, green = -0.01, blue = 0}))
+LUA
+)" "out-of-range channels must clamp rather than overflow the format"
+}
+
+test_hex_is_lowercase_six_digits() {
+  assert_eq "ok" "$(region_lua <<'LUA'
+local h = R._hexOf({red = 0.667, green = 0.4, blue = 0.13})
+print(h:match("^#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]$") and "ok" or ("bad: " .. h))
+LUA
+)" "hex must be #rrggbb, lowercase"
+}
+
+# ------------------------------------------------------- point -> pixel map --
+
+# On a 1x display the screenshot's pixels and the screen's points line up, so
+# this mapping is invisible. On Retina the screenshot comes back at twice the
+# width and reading colorAt() with raw point coordinates samples a pixel up to
+# half a screen away from the cursor.
+test_a_non_retina_point_maps_to_itself() {
+  assert_eq "100,50" "$(region_lua <<'LUA'
+local p = R._imagePoint({x = 0, y = 0, w = 2560, h = 1440}, {w = 2560, h = 1440}, 100, 50)
+print(string.format("%d,%d", p.x, p.y))
+LUA
+)" "at 1x the point is the pixel"
+}
+
+test_a_retina_point_is_scaled_to_the_pixel_grid() {
+  assert_eq "200,100" "$(region_lua <<'LUA'
+local p = R._imagePoint({x = 0, y = 0, w = 1440, h = 900}, {w = 2880, h = 1800}, 100, 50)
+print(string.format("%d,%d", p.x, p.y))
+LUA
+)" "at 2x the pixel is twice the point"
+}
+
+# The frame origin is subtracted BEFORE scaling: a second display starts at a
+# nonzero global x, but its screenshot starts at pixel 0.
+test_a_secondary_displays_origin_is_removed_first() {
+  assert_eq "20,10" "$(region_lua <<'LUA'
+local p = R._imagePoint({x = 2560, y = 203, w = 1920, h = 1080}, {w = 1920, h = 1080}, 2580, 213)
+print(string.format("%d,%d", p.x, p.y))
+LUA
+)" "the screenshot's origin is the frame's origin, not the desktop's"
+}
+
+test_origin_and_scale_apply_together() {
+  assert_eq "40,20" "$(region_lua <<'LUA'
+local p = R._imagePoint({x = 2560, y = 203, w = 1920, h = 1080}, {w = 3840, h = 2160}, 2580, 213)
+print(string.format("%d,%d", p.x, p.y))
+LUA
+)" "a Retina secondary display needs both"
+}
+
 run_tests
