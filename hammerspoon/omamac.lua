@@ -154,10 +154,19 @@ end
 local function onMessage(message)
   local b = message and message.body
   if type(b) ~= "table" then return end
-  if b.action == "apply" and b.cmd and b.arg then
+  if b.action == "apply" and b.cmd and (b.arg or b.args) then
     hideMenu()
     -- async: never block the UI on a switch.
-    runAsync({ b.cmd, b.arg }, function(_, stdout)
+    -- `args` carries a whole argv when one value is not enough — assigning a
+    -- workspace needs a flag and a value. `arg` stays for the single-value
+    -- case, which is every other level.
+    local argv = { b.cmd }
+    if type(b.args) == "table" then
+      for _, a in ipairs(b.args) do argv[#argv + 1] = a end
+    else
+      argv[#argv + 1] = b.arg
+    end
+    runAsync(argv, function(_, stdout)
       -- An applied command that writes to STDOUT is reporting something the
       -- user has to see from a menu that has already closed. Every log_* in
       -- omamac goes to stderr and the setter paths print nothing, so this

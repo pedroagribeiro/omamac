@@ -614,4 +614,59 @@ test_gaps_applies_through_the_aerospace_command() {
   assert_eq '{"action":"apply","cmd":"aerospace","arg":"10"}' "$(printf '%s' "$out" | jq -c '.[-1]')"
 }
 
+# Assigning a workspace to a monitor is a two-part choice, so the monitor level
+# has to know which workspace row was drilled in from. That context is read
+# from the row's LABEL rather than its position, because filtering reorders
+# what the selection indexes into.
+WS_DATA='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"100","options":["100"]},"gaps":{"current":"10","options":["10"]},"workspaces":{"list":[{"id":"1","monitor":"main"},{"id":"2","monitor":"secondary"},{"id":"3","monitor":"main"}],"monitors":["main","secondary","DELL P2723DE"]},"bg":{"current":"","options":[]},"colors":{}}'
+
+test_workspaces_level_shows_each_workspace_with_its_monitor() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local out; out=$(run_driver "$WS_DATA" "workspaces-report")
+  assert_eq 3 "$(printf '%s' "$out" | jq '.list | length')"
+  assert_contains "$(printf '%s' "$out" | jq -r '.list[1].name')" "2"
+  assert_contains "$(printf '%s' "$out" | jq -r '.list[1].name')" "secondary" \
+    "each row must show the monitor that workspace is pinned to"
+}
+
+test_monitor_level_checks_the_monitor_of_the_workspace_drilled_into() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # Workspace 2 is on `secondary`, so THAT is the row that opens selected and
+  # carries the check — not workspace 1's `main`.
+  local out; out=$(run_driver "$WS_DATA" "wsmonitor-report")
+  assert_eq '["main","secondary","DELL P2723DE"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
+  assert_eq "secondary" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')" \
+    "the monitor list must open on the drilled-into workspace's own monitor"
+  assert_eq '"\u2713"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "secondary") | .icon')"
+}
+
+test_assigning_sends_the_workspace_and_the_monitor_together() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  # Workspace 2 opens on `secondary` (index 1); ArrowDown moves to DELL.
+  # Both halves must travel: a message carrying only the monitor would
+  # reassign whichever workspace omamac happened to guess.
+  local out; out=$(run_driver "$WS_DATA" "wsmonitor-apply")
+  assert_eq '{"action":"apply","cmd":"aerospace","args":["--workspace","2=DELL P2723DE"]}' \
+    "$(printf '%s' "$out" | jq -c '.[-1]')"
+}
+
+test_escape_from_a_monitor_list_returns_to_its_workspace_row() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local out; out=$(run_driver "$WS_DATA" "wsmonitor-escape")
+  assert_contains "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')" "2" \
+    "Escape must land back on the workspace that was drilled into, not the first row"
+}
+
 run_tests

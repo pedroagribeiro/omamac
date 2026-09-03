@@ -320,7 +320,7 @@
   // Ghostty's own settings. The font FAMILY is not one of them — see the
   // `font` level.
   const GHOSTTY_ICONS = { Size: "\u{f034}", Opacity: "\u{f042}" };
-  const AEROSPACE_ICONS = { Gaps: "\u{f0b0c}" };
+  const AEROSPACE_ICONS = { Gaps: "\u{f0b0c}", Workspaces: "\u{f0b0c}" };
   // Inside Font. Family reuses the Font glyph; Size is U+F034, fa-text-height.
   const FONT_MENU_ICONS = { Family: "\u{e659}", Size: "\u{f034}" };
 
@@ -444,9 +444,9 @@
     // bin/omamac-aerospace.
     aerospace: {
       crumb: "AeroSpace", parent: "apps",
-      items: () => ["Gaps"],
+      items: () => ["Gaps", "Workspaces"],
       icon: (name) => AEROSPACE_ICONS[name] || "",
-      into: { Gaps: "gaps" },
+      into: { Gaps: "gaps", Workspaces: "workspaces" },
     },
     gaps: {
       crumb: "Gaps", cmd: "aerospace", parent: "aerospace",
@@ -454,6 +454,37 @@
       items: () => DATA.gaps?.options || [],
       icon: (name) =>
         name === String(DATA.gaps?.current || "") ? CURRENT_MARK : AEROSPACE_ICONS.Gaps,
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
+    },
+    // Each row is one workspace and the monitor it is pinned to. Drilling in
+    // opens the monitor list for THAT workspace — see `ctx` below, which is
+    // what carries which row was picked.
+    workspaces: {
+      crumb: "Workspaces", parent: "aerospace",
+      items: () => (DATA.workspaces?.list || []).map((w) => `${w.id}  \u2192  ${w.monitor}`),
+      icon: () => AEROSPACE_ICONS.Workspaces,
+      intoAll: "wsmonitor",
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
+    },
+    wsmonitor: {
+      crumb: "Monitor", cmd: "aerospace", parent: "workspaces",
+      items: () => DATA.workspaces?.monitors || [],
+      // The row picked in `workspaces` decides both which monitor is current
+      // and which workspace gets reassigned. Its id is the leading number of
+      // that row's label — read from the label rather than its position,
+      // because filtering reorders what `sel` indexes into.
+      current: () => {
+        const w = ctxWorkspace();
+        return w ? w.monitor : "";
+      },
+      argsOf: (name) => {
+        const w = ctxWorkspace();
+        return w ? ["--workspace", `${w.id}=${name}`] : null;
+      },
+      icon: (name) => {
+        const w = ctxWorkspace();
+        return w && name === w.monitor ? CURRENT_MARK : AEROSPACE_ICONS.Workspaces;
+      },
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
     ghostty: {
@@ -505,6 +536,15 @@
   };
 
   let level = "root", sel = 0, filter = "";
+  // The row a submenu was entered from, when the child needs to know. Only
+  // `wsmonitor` uses it: which monitor to check, and which workspace to
+  // reassign, both depend on the workspace row that was picked.
+  let ctx = null;
+  const ctxWorkspace = () => {
+    const id = String(ctx || "").match(/^(\d+)/);
+    if (!id) return null;
+    return (DATA.workspaces?.list || []).find((w) => String(w.id) === id[1]) || null;
+  };
   // Previews are cached PER KIND, not in one flat map. A theme is
   // "tokyo-night" and a wallpaper is "tokyo-night-0-swirl.jpg" — close
   // enough that a future rename could collide, and a preview filed under
@@ -715,11 +755,18 @@
     const pick = items[sel];
     // Three kinds of row: one that RUNS a command outright, one that opens a
     // submenu, and one that applies the value it names.
-    const run = LEVELS[level].runs && LEVELS[level].runs[pick];
+    const L = LEVELS[level];
+    const run = L.runs && L.runs[pick];
     if (run) return send({ action: "apply", cmd: run[0], arg: run[1] });
-    const into = LEVELS[level].into;
+    // `intoAll` is a submenu every row opens — the rows are data, not a fixed
+    // set of destinations, so the picked row is remembered instead.
+    const into = L.intoAll ? L.intoAll : (L.into && L.into[pick]);
     if (into) {
-      enterLevel(into[pick]);
+      ctx = pick;
+      enterLevel(into);
+    } else if (L.argsOf) {
+      const args = L.argsOf(pick);
+      if (args) send({ action: "apply", cmd: L.cmd, args });
     } else {
       // Levels may display a value differently from how the CLI takes it —
       // Opacity shows "85%" but `omamac opacity` wants 85.
@@ -738,7 +785,9 @@
     filter = "";
     const rows = visible();
     const into = LEVELS[level].into || {};
-    const at = rows.findIndex((r) => into[r] === from);
+    const at = LEVELS[level].intoAll === from
+      ? rows.indexOf(ctx)                       // came from a data row
+      : rows.findIndex((r) => into[r] === from);
     sel = at >= 0 ? at : 0;
     render();
   }

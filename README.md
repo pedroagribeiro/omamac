@@ -270,8 +270,22 @@ the values omamac owns:
   outer.top =        10  # omamac:gaps
 ```
 
-omamac writes `aerospace.toml` beside it, substituting only the marked
-numbers. The template holds real defaults rather than placeholders, so it
+**Applications → AeroSpace → Workspaces** pins a workspace to a monitor. Mark
+those the same way — the value is a quoted string and each line is addressed by
+its key, so assigning one leaves the rest alone:
+
+```toml
+[workspace-to-monitor-force-assignment]
+1 = 'main'       # omamac:workspace
+4 = 'secondary'  # omamac:workspace
+```
+
+The monitor list offers AeroSpace's positional keywords (`main`, `secondary`)
+plus whatever is connected, by name — names survive replugging in a way the
+keywords do not.
+
+omamac writes `aerospace.toml` beside the template, substituting only the
+marked values. The template holds real defaults rather than placeholders, so it
 stays a complete, valid AeroSpace config on its own — nothing breaks if omamac
 never runs. `omamac aerospace --render` rebuilds it, which is worth running on
 activation so template edits take effect.

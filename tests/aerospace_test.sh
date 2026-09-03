@@ -33,6 +33,11 @@ accordion-padding = 30
 [mode.main.binding]
   alt-h = 'focus left'
   alt-2 = 'workspace 2'
+
+[workspace-to-monitor-force-assignment]
+1 = 'main'       # omamac:workspace
+2 = 'main'       # omamac:workspace
+3 = 'secondary'  # omamac:workspace
 EOF
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$AERO_LOG"\nexit 0\n' > "$TMPDIR_TEST/aerospace"
   chmod +x "$TMPDIR_TEST/aerospace"
@@ -175,6 +180,83 @@ test_a_prose_mention_of_the_marker_is_not_treated_as_a_value() {
   assert_eq 6 "$(grep -cE '=[[:space:]]*6[[:space:]]*# omamac:gaps' "$OUT")"
   assert_eq 6 "$(grep -cE '=[[:space:]]*[0-9]+[[:space:]]*# omamac:gaps' "$OUT")" \
     "only assignments count as marked values"
+}
+
+# ---------------------------------------------------------------------------
+# Workspace -> monitor assignment. Same marker idea as gaps, but the value is a
+# quoted string and each line is addressed BY ITS KEY rather than all moving
+# together — that is the whole difference, and the thing worth pinning.
+# ---------------------------------------------------------------------------
+
+test_workspaces_are_listed_with_their_monitors() {
+  setup_aero
+  assert_eq "1=main
+2=main
+3=secondary" "$("$OMAMAC_BIN" aerospace --workspaces)"
+}
+
+test_monitors_include_the_positional_keywords() {
+  setup_aero
+  local out; out=$("$OMAMAC_BIN" aerospace --monitors)
+  assert_contains "$out" "main"
+  assert_contains "$out" "secondary"
+}
+
+# THE assertion for this feature: assigning one workspace must leave every
+# other assignment untouched. A substitution keyed on "any number" rather than
+# on the workspace asked for moves all of them at once, which looks like it
+# worked until you notice every workspace is on the same monitor.
+test_assigning_one_workspace_leaves_the_others_alone() {
+  setup_aero
+  "$OMAMAC_BIN" aerospace --workspace 2=secondary >/dev/null 2>&1
+  assert_eq "1=main
+2=secondary
+3=secondary" "$("$OMAMAC_BIN" aerospace --workspaces)" \
+    "only workspace 2 may have moved"
+}
+
+test_assignment_survives_a_gap_change() {
+  setup_aero
+  "$OMAMAC_BIN" aerospace --workspace 2=secondary >/dev/null 2>&1
+  "$OMAMAC_BIN" aerospace 6 >/dev/null 2>&1
+  assert_contains "$("$OMAMAC_BIN" aerospace --workspaces)" "2=secondary" \
+    "re-rendering for a gap change must not drop an assignment"
+  assert_eq 6 "$(grep -cE '=[[:space:]]*6[[:space:]]*# omamac:gaps' "$OUT")"
+}
+
+test_assignment_survives_a_plain_rerender() {
+  setup_aero
+  "$OMAMAC_BIN" aerospace --workspace 3=main >/dev/null 2>&1
+  rm -f "$OUT"
+  "$OMAMAC_BIN" aerospace --render >/dev/null 2>&1
+  assert_contains "$("$OMAMAC_BIN" aerospace --workspaces)" "3=main"
+}
+
+test_a_workspace_the_template_does_not_declare_is_refused() {
+  setup_aero
+  local out rc
+  out=$("$OMAMAC_BIN" aerospace --workspace 9=main 2>&1); rc=$?
+  assert_eq 1 "$rc" "the template has no marked line for workspace 9"
+  assert_contains "$out" "not assignable"
+}
+
+test_malformed_assignments_are_refused() {
+  setup_aero
+  local rc
+  for bad in "2" "=main" "abc=main" "2="; do
+    "$OMAMAC_BIN" aerospace --workspace "$bad" >/dev/null 2>&1; rc=$?
+    [ "$rc" -eq 1 ] || fail "assignment '$bad' should have been refused, exited $rc"
+  done
+}
+
+# A monitor name is written into single-quoted TOML, so a quote in the name
+# would produce a config AeroSpace cannot parse.
+test_a_monitor_name_containing_a_quote_is_refused() {
+  setup_aero
+  local out rc
+  out=$("$OMAMAC_BIN" aerospace --workspace "2=Bob's Display" 2>&1); rc=$?
+  assert_eq 1 "$rc"
+  assert_contains "$out" "may not contain a quote"
 }
 
 run_tests

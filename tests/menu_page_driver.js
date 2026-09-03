@@ -241,6 +241,35 @@ switch (scenario) {
     fireKey('ArrowDown');  // AeroSpace -> Ghostty
     fireKey('Enter');
     break;
+  case 'workspaces-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter');      // Applications
+    fireKey('Enter');      // AeroSpace
+    fireKey('ArrowDown');  // Gaps -> Workspaces
+    fireKey('Enter');
+    break;
+  case 'wsmonitor-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('Enter');   // into Workspaces
+    fireKey('ArrowDown');                     // row 0 -> row 1 (workspace 2)
+    fireKey('Enter');                         // into its monitor list
+    break;
+  case 'wsmonitor-apply':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('Enter');   // into Workspaces
+    fireKey('ArrowDown'); fireKey('Enter');   // workspace 2 -> monitors
+    fireKey('ArrowDown');                     // move off the current monitor
+    fireKey('Enter');                         // assign it
+    break;
+  case 'wsmonitor-escape':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('Enter');   // into workspace 2's monitors
+    fireKey('Escape');                        // back — must land ON workspace 2
+    break;
   case 'gaps-select-apply':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('Enter');      // Applications
@@ -303,7 +332,8 @@ function listReport() {
 
 if (['font-open-and-report', 'root-report', 'size-open-and-report',
      'ghostty-menu-report', 'size-then-escape', 'opacity-open-and-report',
-     'apps-report', 'apps-then-escape'].includes(scenario)) {
+     'apps-report', 'apps-then-escape', 'workspaces-report',
+     'wsmonitor-report', 'wsmonitor-escape'].includes(scenario)) {
   process.stdout.write(JSON.stringify({
     messages,
     list: listReport(),

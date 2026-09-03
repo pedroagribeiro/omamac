@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# omamac-aerospace [px|--list|--current|--render]
+# omamac-aerospace [px|--list|--current|--render|--workspaces|--monitors|--workspace N=monitor]
 #
 # AeroSpace's gaps can only be changed by editing aerospace.toml — its CLI is
 # read-only (`config --get`, `--all-keys`), there is no include mechanism and no
@@ -26,7 +26,13 @@ AEROSPACE="${OMAMAC_AEROSPACE:-aerospace}"
 
 TEMPLATE="${CONFIG_ROOT}/aerospace/aerospace.template.toml"
 OUT="${CONFIG_ROOT}/aerospace/aerospace.toml"
+# Assignments are reported from the RENDERED config when there is one: that is
+# what AeroSpace is actually using. Before the first render, the template's own
+# values are the truth.
+RENDERED_OR_TEMPLATE="$TEMPLATE"
+[ -f "$OUT" ] && RENDERED_OR_TEMPLATE="$OUT"
 MARKER='# omamac:gaps'
+WS_MARKER='# omamac:workspace'
 
 MIN=0
 MAX=40
@@ -53,8 +59,21 @@ render() {
   tmp="$(dirname "$OUT")/.aerospace.toml.$$"
   # Only the number changes; the key, the spacing and the marker all survive,
   # so the rendered file stays diffable against the template.
-  sed -E "s|^([^#]*=[[:space:]]*)[0-9]+([[:space:]]*${MARKER}.*)$|\1${value}\2|" \
-    "$TEMPLATE" > "$tmp" || { rm -f "$tmp"; log_error "could not render aerospace.toml"; return 1; }
+  {
+    sed -E "s|^([^#]*=[[:space:]]*)[0-9]+([[:space:]]*${MARKER}.*)$|\1${value}\2|" "$TEMPLATE"
+  } > "$tmp" || { rm -f "$tmp"; log_error "could not render aerospace.toml"; return 1; }
+  # Then each workspace omamac has been given a monitor for. Addressed by key,
+  # so an assignment omamac has never been asked about keeps the template's.
+  local ws mon tmp2
+  for f in "$OMAMAC_STATE"/aerospace.workspace.*; do
+    [ -f "$f" ] || continue
+    ws="${f##*aerospace.workspace.}"
+    mon=$(cat "$f")
+    [ -n "$mon" ] || continue
+    tmp2="${tmp}.ws"
+    sed -E "s|^([[:space:]]*${ws}[[:space:]]*=[[:space:]]*)'[^']*'([[:space:]]*${WS_MARKER}.*)$|\1'${mon}'\2|" \
+      "$tmp" > "$tmp2" && mv -f "$tmp2" "$tmp"
+  done
   # Renamed into place: AeroSpace may be told to reload at any moment, and a
   # half-written config is a parse error rather than a slightly-wrong gap.
   mv -f "$tmp" "$OUT"
@@ -70,6 +89,61 @@ reload() {
     return 1
   fi
   "$AEROSPACE" reload-config >/dev/null 2>&1 || { log_error "aerospace reload-config failed"; return 1; }
+}
+
+# ── workspace -> monitor assignment ────────────────────────────────────────
+# The same marker idea as gaps, but the value is a quoted string and each line
+# is addressed by its key (the workspace number) rather than all moving
+# together:
+#
+#   4 = 'secondary'  # omamac:workspace
+#
+# Prints "<workspace>=<monitor>" per assignment, in template order.
+workspaces_list() {
+  [ -f "$TEMPLATE" ] || return 0
+  sed -n -E "s/^[[:space:]]*([0-9]+)[[:space:]]*=[[:space:]]*'([^']*)'[[:space:]]*${WS_MARKER}.*/\1=\2/p" \
+    "$RENDERED_OR_TEMPLATE"
+}
+
+# The monitors a workspace may be assigned to: AeroSpace's positional keywords
+# plus whatever is actually connected, by name. Names are stable across
+# replugging in a way `main`/`secondary` are not.
+monitors_list() {
+  printf 'main\nsecondary\n'
+  command -v "$AEROSPACE" >/dev/null 2>&1 || return 0
+  "$AEROSPACE" list-monitors 2>/dev/null | sed -E 's/^[0-9]+[[:space:]]*\|[[:space:]]*//' | grep -v '^$'
+}
+
+# Rewrite one workspace's monitor, leaving every other assignment alone.
+workspace_set() {
+  local spec="$1" ws monitor tmp prev
+  case "$spec" in
+    *=*) ws="${spec%%=*}"; monitor="${spec#*=}" ;;
+    *)   log_error "expected <workspace>=<monitor>, got: ${spec}"; return 1 ;;
+  esac
+  case "$ws" in
+    ''|*[!0-9]*) log_error "workspace must be a number: ${ws}"; return 1 ;;
+  esac
+  [ -n "$monitor" ] || { log_error "no monitor given for workspace ${ws}"; return 1; }
+  # A monitor name containing a quote would break the TOML it is written into.
+  case "$monitor" in
+    *"'"*) log_error "monitor name may not contain a quote: ${monitor}" ; return 1 ;;
+  esac
+  [ -f "$TEMPLATE" ] || { log_error "no aerospace template at ${TEMPLATE}"; return 1; }
+  workspaces_list | grep -q "^${ws}=" || {
+    log_error "workspace ${ws} is not assignable; the template has no marked line for it"
+    return 1
+  }
+
+  prev=$(omamac_state_get "aerospace.workspace.${ws}")
+  omamac_state_set "aerospace.workspace.${ws}" "$monitor"
+  if ! render "$(gaps_current)" || ! reload; then
+    if [ -n "$prev" ]; then omamac_state_set "aerospace.workspace.${ws}" "$prev"
+    else omamac_state_clear "aerospace.workspace.${ws}"; fi
+    log_error "could not assign workspace ${ws} to ${monitor}; reverted"
+    return 1
+  fi
+  log_info "Workspace ${ws} assigned to ${monitor}."
 }
 
 gaps_set() {
@@ -98,6 +172,9 @@ case "${1:-}" in
   --list)    gaps_list ;;
   --current) gaps_current ;;
   --render)  render "$(gaps_current)" && reload ;;
+  --workspaces) workspaces_list ;;
+  --monitors)   monitors_list ;;
+  --workspace)  workspace_set "${2:-}" ;;
   "")        gaps_current ;;
   *)         gaps_set "$1" ;;
 esac
