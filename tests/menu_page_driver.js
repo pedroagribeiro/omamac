@@ -306,6 +306,36 @@ switch (scenario) {
     fireKey('ArrowDown'); fireKey('Enter');      // enter Opacity, on the current
     fireKey('ArrowDown'); fireKey('Enter');      // one step down, apply
     break;
+  // Root: Theme, Font, Background, Applications, Capture — four downs to
+  // reach Capture.
+  case 'capture-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('Enter');
+    break;
+  case 'capture-screenshot':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('Enter');      // Capture
+    fireKey('Enter');                            // Screenshot, the first row
+    break;
+  case 'capture-stop':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('Enter');      // Capture
+    fireKey('ArrowDown'); fireKey('Enter');      // Stop Recording (only while recording)
+    break;
+  case 'capture-record-silent':
+  case 'capture-record-audio':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('Enter');      // Capture
+    fireKey('ArrowDown'); fireKey('Enter');      // Record (not recording: row 1)
+    if (scenario === 'capture-record-audio') fireKey('ArrowDown');
+    fireKey('Enter');
+    break;
+  case 'record-then-escape':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('Enter');      // Capture
+    fireKey('ArrowDown'); fireKey('Enter');      // Record
+    fireKey('Escape');                           // back up one level
+    break;
   case 'slack-copy':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('Enter');                            // Applications
@@ -333,7 +363,8 @@ function listReport() {
 if (['font-open-and-report', 'root-report', 'size-open-and-report',
      'ghostty-menu-report', 'size-then-escape', 'opacity-open-and-report',
      'apps-report', 'apps-then-escape', 'workspaces-report',
-     'wsmonitor-report', 'wsmonitor-escape'].includes(scenario)) {
+     'wsmonitor-report', 'wsmonitor-escape',
+     'capture-report', 'record-then-escape'].includes(scenario)) {
   process.stdout.write(JSON.stringify({
     messages,
     list: listReport(),

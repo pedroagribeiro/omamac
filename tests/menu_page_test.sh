@@ -328,12 +328,12 @@ test_root_rows_keep_their_own_icons() {
     return
   fi
   # Regression guard for the change above: the per-level icon function must not
-  # cost the root level its three glyphs (U+F0E0C, U+E659, U+F03E, verbatim
-  # from omarchy-menu.jsonc).
+  # cost the root level its glyphs (U+F0E0C, U+E659, U+F03E, U+F00A, U+F030 —
+  # all verbatim from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  assert_eq '["\udb83\ude0c","\ue659","\uf03e","\uf00a"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
-    "root keeps what is not app-specific: Theme, Font, Background, Applications"
+  assert_eq '["\udb83\ude0c","\ue659","\uf03e","\uf00a","\uf030"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root keeps what is not app-specific: Theme, Font, Background, Applications, Capture"
 }
 
 # The Font menu is WIDER than every other card. Menu.qml:111 special-cases
@@ -668,6 +668,74 @@ test_escape_from_a_monitor_list_returns_to_its_workspace_row() {
   local out; out=$(run_driver "$WS_DATA" "wsmonitor-escape")
   assert_contains "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')" "2" \
     "Escape must land back on the workspace that was drilled into, not the first row"
+}
+
+# ------------------------------------------------------------------ capture --
+
+# Upstream's own order, from omarchy-menu.jsonc: Screenshot, then the stop row,
+# then Screenrecord. Getting it wrong puts Stop where muscle memory expects
+# Record.
+CAPTURE_IDLE='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"capture":{"recording":false},"colors":{}}'
+CAPTURE_REC='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"capture":{"recording":true},"colors":{}}'
+
+test_capture_hides_the_stop_row_when_nothing_is_recording() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "capture-report")
+  assert_eq '["Screenshot","Record"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+    "with nothing recording there is nothing to stop"
+}
+
+test_capture_shows_the_stop_row_while_recording() {
+  local out; out=$(run_driver "$CAPTURE_REC" "capture-report")
+  assert_eq '["Screenshot","Stop Recording","Record"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+    "Omarchy puts the stop row between Screenshot and Screenrecord"
+}
+
+# U+F030 for Screenshot and U+F03D for the record rows, verbatim from
+# omarchy-menu.jsonc.
+test_capture_rows_carry_omarchys_glyphs() {
+  local out; out=$(run_driver "$CAPTURE_REC" "capture-report")
+  assert_eq '["\uf030","\uf03d","\uf03d"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "capture glyphs must be the ones upstream uses"
+}
+
+# Screenshot cannot post an apply: the region picker runs in the host first, so
+# the row hands over a message instead of a command with a value.
+test_screenshot_asks_the_host_to_pick_a_region() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "capture-screenshot")
+  assert_eq '{"action":"capture","kind":"screenshot"}' "$(printf '%s' "$out" | jq -c '.[-1]')" \
+    "Screenshot must post a capture message, not an apply"
+}
+
+test_record_without_audio_says_so_explicitly() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "capture-record-silent")
+  assert_eq '{"action":"capture","kind":"record","audio":false}' "$(printf '%s' "$out" | jq -c '.[-1]')" \
+    "the silent row must carry audio:false, not omit it"
+}
+
+test_record_with_audio_sets_the_flag() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "capture-record-audio")
+  assert_eq '{"action":"capture","kind":"record","audio":true}' "$(printf '%s' "$out" | jq -c '.[-1]')" \
+    "the microphone row must ask for audio"
+}
+
+# The stop row is the one capture action with nothing to pick, so it stays an
+# ordinary command.
+test_stop_runs_the_command_directly() {
+  local out; out=$(run_driver "$CAPTURE_REC" "capture-stop")
+  assert_eq '{"action":"apply","cmd":"capture","arg":"--stop"}' "$(printf '%s' "$out" | jq -c '.[-1]')" \
+    "Stop Recording must run capture --stop"
+}
+
+# Escape walks up one level and lands on the row that was drilled in from,
+# rather than closing outright.
+test_escape_from_record_returns_to_capture() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "record-then-escape")
+  assert_eq '["Screenshot","Record"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+    "Escape from Record goes back to Capture"
+  assert_eq 'Record' "$(printf '%s' "$out" | jq -r '[.list[] | select(.on) | .name] | .[0]')" \
+    "and lands on the row it came from"
+  assert_eq '[]' "$(printf '%s' "$out" | jq -c '[.messages[] | select(.action == "close")]')" \
+    "Escape one level up must not close the menu"
 }
 
 run_tests

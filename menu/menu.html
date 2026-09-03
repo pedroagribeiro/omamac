@@ -309,7 +309,15 @@
   // verified present by parsing the Nerd Font's cmap, like the Size glyph.
   const ROOT_ICONS = {
     Theme: "\u{f0e0c}", Font: "\u{e659}", Background: "\u{f03e}",
-    Applications: "\u{f00a}",
+    Applications: "\u{f00a}", Capture: "\u{f030}",
+  };
+  // Omarchy's own glyphs, read out of default/omarchy/omarchy-menu.jsonc at
+  // v4.0.2: trigger.capture and trigger.capture.screenshot are both U+F030,
+  // and every screenrecord row is U+F03D. Both verified present in the Nerd
+  // Font by parsing its cmap, the same check the Padding and Blur glyphs got.
+  const CAPTURE_ICONS = {
+    Screenshot: "\u{f030}", Record: "\u{f03d}", "Stop Recording": "\u{f03d}",
+    "With no audio": "\u{f03d}", "With microphone audio": "\u{f03d}",
   };
   // One per application under Applications. Adding an app is an entry here, in
   // that level's `items`, and either `into` (it has settings of its own) or
@@ -416,9 +424,10 @@
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Font", "Background", "Applications"],
+      items: () => ["Theme", "Font", "Background", "Applications", "Capture"],
       icon: (name) => ROOT_ICONS[name] || "",
-      into: { Theme: "theme", Font: "font", Background: "bg", Applications: "apps" },
+      into: { Theme: "theme", Font: "font", Background: "bg", Applications: "apps",
+              Capture: "capture" },
     },
     theme: {
       crumb: "Theme", cmd: "theme", picker: "theme", labels: true, parent: "root",
@@ -450,6 +459,38 @@
       // bg.current is an absolute path; the options are basenames.
       current: () => String(DATA.bg.current || "").split("/").pop(),
       items: () => DATA.bg.options || [],
+    },
+    // Screenshots and recording. Upstream's order, from omarchy-menu.jsonc:
+    // Screenshot, then Stop (only while recording), then Screenrecord.
+    capture: {
+      crumb: "Capture", parent: "root",
+      // Upstream hides the stop row with `"when": "pgrep -f gpu-screen-recorder"`.
+      // menu-data answers the same question for us, so the row exists only
+      // while there is something to stop.
+      items: () => DATA.capture?.recording
+        ? ["Screenshot", "Stop Recording", "Record"]
+        : ["Screenshot", "Record"],
+      icon: (name) => CAPTURE_ICONS[name] || "",
+      into: { Record: "record" },
+      // Rows that hand the host a message of their own rather than applying a
+      // value: both of these have to run the region picker first, which lives
+      // in the host, not here.
+      sends: { Screenshot: { action: "capture", kind: "screenshot" } },
+      runs: { "Stop Recording": ["capture", "--stop"] },
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
+    },
+    // Desktop audio is missing on purpose, not by omission: screencapture can
+    // only record an INPUT device, so a stock Mac has no way to capture system
+    // output. See bin/omamac-capture.
+    record: {
+      crumb: "Record", parent: "capture",
+      items: () => ["With no audio", "With microphone audio"],
+      icon: (name) => CAPTURE_ICONS[name] || "",
+      sends: {
+        "With no audio": { action: "capture", kind: "record", audio: false },
+        "With microphone audio": { action: "capture", kind: "record", audio: true },
+      },
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
     // Per-application. Some apps have settings of their own; some can only be
     // handed a theme to paste, because omamac cannot drive them — see
@@ -778,6 +819,11 @@
     // Three kinds of row: one that RUNS a command outright, one that opens a
     // submenu, and one that applies the value it names.
     const L = LEVELS[level];
+    // A row that hands the host a whole message. Capture needs this because the
+    // region picker runs in the host before any command does — there is no
+    // value to apply at the point the row is chosen.
+    const msg = L.sends && L.sends[pick];
+    if (msg) return send(msg);
     const run = L.runs && L.runs[pick];
     if (run) return send({ action: "apply", cmd: run[0], arg: run[1] });
     // `intoAll` is a submenu every row opens — the rows are data, not a fixed

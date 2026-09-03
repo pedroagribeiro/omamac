@@ -24,6 +24,14 @@ gaps_cur=$("${OMAMAC_DIR}/bin/omamac-aerospace" --current)
 ws_json=$("${OMAMAC_DIR}/bin/omamac-aerospace" --workspaces \
   | jq -R -s -c 'split("\n") | map(select(length > 0) | split("=") | {id: .[0], monitor: (.[1:] | join("="))})')
 bg_cur=$("${OMAMAC_DIR}/bin/omamac-bg" --current)
+# Upstream hides its stop row behind `"when": "pgrep -f gpu-screen-recorder"`.
+# The menu has no shell to run a `when` in, so the answer is carried in the
+# data instead. --status exits non-zero when nothing is recording.
+if "${OMAMAC_DIR}/bin/omamac-capture" --status >/dev/null 2>&1; then
+  recording=true
+else
+  recording=false
+fi
 
 # The menu paints itself in the active theme, so the host never flashes an
 # unthemed panel. omamac_color is the only correct reader for colors.toml —
@@ -51,10 +59,12 @@ jq -n -c \
   --arg pc "$padding_cur" --argjson po "$("${OMAMAC_DIR}/bin/omamac-padding" --list | arr)" \
   --arg blc "$blur_cur"   --argjson blo "$("${OMAMAC_DIR}/bin/omamac-blur"    --list | arr)" \
   --arg bc "$bg_cur"    --argjson bo "$("${OMAMAC_DIR}/bin/omamac-bg"    --list | arr)" \
+  --argjson rec "$recording" \
   --arg bgc "$bg_color" --arg fgc "$fg_color" --arg ac "$accent_color" --arg selc "$sel_color" \
   '{theme:{current:$tc,options:$to},font:{current:$fc,options:$fo},
     fontSize:{current:$sc,options:$so},opacity:{current:$oc,options:$oo},
     gaps:{current:$gc,options:$go},workspaces:{list:$wsl,monitors:$wsm},
     padding:{current:$pc,options:$po},blur:{current:$blc,options:$blo},
     bg:{current:$bc,options:$bo},
+    capture:{recording:$rec},
     colors:{background:$bgc,foreground:$fgc,accent:$ac,selection_background:$selc}}'

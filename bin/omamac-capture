@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# omamac-capture — screenshots and screen recordings.
+#
+# Ports omarchy-capture-screenshot and omarchy-capture-screenrecording. The
+# picker they share (omarchy-capture-region, slurp over a frozen screen) has no
+# macOS equivalent, so omamac grows its own in hammerspoon/region.lua and hands
+# the geometry here in slurp's own "X,Y WxH" format. That keeps the split
+# upstream has: one thing picks a rectangle, another captures it.
+#
+# What is deliberately NOT ported, because macOS cannot do it:
+#
+#   desktop audio   screencapture records only an INPUT device (-g / -G). There
+#                   is no supported way to capture system output without a
+#                   virtual loopback device (BlackHole, Loopback). Offering the
+#                   option would produce silent recordings on a stock Mac.
+#   webcam overlay  upstream composites an mpv window; that is a whole feature.
+#   ffmpeg pass     upstream trims the first frame and normalises loudness to
+#                   fix gpu-screen-recorder warmup artefacts. screencapture has
+#                   no such artefacts, and omamac has no ffmpeg dependency.
+#
+# And one deliberate divergence: upstream writes .mp4. Naming the file .mp4 here
+# would be a lie — screencapture writes a QuickTime container whatever the
+# extension (verified: major brand 'qt  '), so recordings are .mov.
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+
+SCREENCAPTURE="${OMAMAC_SCREENCAPTURE:-/usr/sbin/screencapture}"
+OSASCRIPT="${OMAMAC_OSASCRIPT:-osascript}"
+OMAMAC_PS="${OMAMAC_PS:-ps}"
+OMAMAC_KILL="${OMAMAC_KILL:-kill}"
+
+SHOT_DIR="${OMAMAC_SCREENSHOT_DIR:-$HOME/Pictures}"
+REC_DIR="${OMAMAC_SCREENRECORD_DIR:-$HOME/Movies}"
+
+# Two lines: the pid, then the file it is writing. Upstream gets away with a
+# bare `pgrep -f '^gpu-screen-recorder'` because that binary belongs to it.
+# screencapture does not — the user's own Cmd-Shift-5 recording is a different
+# process, but a loose pattern match would still find and kill something, so
+# the pid is recorded and re-checked against the file it was started for.
+REC_MARKER="recording"
+
+# How long to wait for a SIGINT'd recording to finalise. screencapture writes
+# the moov atom (the index that makes the file playable) only on clean exit, so
+# this is the difference between a recording and 200MB of unplayable mdat.
+STOP_TIMEOUT_TENTHS=50
+
+# "X,Y WxH" (slurp's format, which the picker speaks) -> "x,y,w,h"
+# (screencapture -R's). Kept as its own function because it is the one piece of
+# geometry handling that is pure, and so the one that can be tested directly.
+region_to_rect() {
+  local geo="$1"
+  [[ $geo =~ ^(-?[0-9]+),(-?[0-9]+)[[:space:]]([0-9]+)x([0-9]+)$ ]] || return 1
+  printf '%s,%s,%s,%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}"
+}
+
+ensure_dir() {
+  [ -d "$1" ] && return 0
+  mkdir -p "$1" || { log_error "could not create $1"; return 1; }
+  log_info "Created $1"
+}
+
+stamp() { date +'%Y-%m-%d_%H-%M-%S'; }
+
+# The pid in the marker is only ours if it is still alive AND still running a
+# screencapture writing the file we recorded. A recycled pid otherwise makes
+# `--status` claim a recording that ended, and `--stop` signal a stranger.
+recording_pid() {
+  local pid file cmd
+  pid=$(omamac_state_get "$REC_MARKER" | sed -n '1p')
+  file=$(omamac_state_get "$REC_MARKER" | sed -n '2p')
+  [ -n "$pid" ] && [ -n "$file" ] || return 1
+  cmd=$("$OMAMAC_PS" -o command= -p "$pid" 2>/dev/null) || return 1
+  case "$cmd" in
+    *screencapture*"$file"*) printf '%s' "$pid" ;;
+    *) return 1 ;;
+  esac
+}
+
+recording_file() { omamac_state_get "$REC_MARKER" | sed -n '2p'; }
+
+copy_image() {
+  # «class PNGf» is the only way to put actual image data on the pasteboard
+  # from a shell; `pbcopy` would paste the file's bytes as text.
+  "$OSASCRIPT" \
+    -e 'on run argv' \
+    -e 'set the clipboard to (read (POSIX file (item 1 of argv)) as «class PNGf»)' \
+    -e 'end run' "$1" >/dev/null 2>&1
+}
+
+screenshot() {
+  local region="$1" processing="$2" file rect
+  ensure_dir "$SHOT_DIR" || return 1
+  file="${SHOT_DIR}/screenshot-$(stamp).png"
+
+  local -a args=(-x)
+  if [ -n "$region" ]; then
+    rect=$(region_to_rect "$region") || { log_error "bad region: ${region}"; return 1; }
+    args+=(-R "$rect")
+  else
+    # No picker available (plain CLI use): fall back to macOS's own interactive
+    # selection, which is the same region-or-window choice the picker offers.
+    args+=(-i)
+  fi
+
+  "$SCREENCAPTURE" "${args[@]}" "$file" 2>/dev/null
+
+  # Cancelling the pick is not a failure — upstream exits 0 on an empty
+  # selection. Test the FILE, not the exit code: screencapture reports 0 for a
+  # cancelled interactive capture, so the status cannot tell the two apart.
+  [ -s "$file" ] || { rm -f "$file"; return 0; }
+
+  if [ "$processing" != "save" ]; then
+    copy_image "$file" || log_warn "screenshot saved, but could not be copied to the clipboard"
+  fi
+  if [ "$processing" = "copy" ]; then
+    rm -f "$file"
+    printf 'Screenshot copied\n'
+    return 0
+  fi
+
+  # stdout, deliberately: the host surfaces an applied command's stdout as a
+  # themed alert, which is the only feedback a menu that has already closed can
+  # give. Every log_* goes to stderr.
+  printf 'Screenshot saved to %s\n' "$(basename "$file")"
+}
+
+start_recording() {
+  local region="$1" audio="$2" file rect
+  ensure_dir "$REC_DIR" || return 1
+  file="${REC_DIR}/screenrecording-$(stamp).mov"
+
+  local -a args=(-v -x)
+  [ "$audio" = "true" ] && args+=(-g)
+  if [ -n "$region" ]; then
+    rect=$(region_to_rect "$region") || { log_error "bad region: ${region}"; return 1; }
+    args+=(-R "$rect")
+  fi
+
+  "$SCREENCAPTURE" "${args[@]}" "$file" >/dev/null 2>&1 &
+  local pid=$!
+
+  # Upstream waits for the output file to appear before believing the recorder
+  # started, and so does this: screencapture exits immediately on a rejected
+  # region or a missing Screen Recording permission, and recording a marker for
+  # a process that already died would leave the menu offering to stop nothing.
+  local waited=0
+  while "$OMAMAC_KILL" -0 "$pid" 2>/dev/null && [ ! -f "$file" ] && [ "$waited" -lt 50 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+
+  if ! "$OMAMAC_KILL" -0 "$pid" 2>/dev/null; then
+    log_error "recording did not start"
+    return 1
+  fi
+
+  printf '%s\n%s\n' "$pid" "$file" | {
+    mkdir -p "$OMAMAC_STATE"
+    cat > "${OMAMAC_STATE}/${REC_MARKER}"
+  }
+  printf 'Recording…\n'
+}
+
+stop_recording() {
+  local pid file count=0
+  pid=$(recording_pid) || { log_error "not recording"; return 1; }
+  file=$(recording_file)
+
+  # SIGINT, never SIGTERM: screencapture finalises the container on interrupt
+  # and is killed outright by anything else, leaving an unplayable file.
+  "$OMAMAC_KILL" -INT "$pid" 2>/dev/null
+
+  while "$OMAMAC_KILL" -0 "$pid" 2>/dev/null && [ "$count" -lt "$STOP_TIMEOUT_TENTHS" ]; do
+    sleep 0.1
+    count=$((count + 1))
+  done
+
+  if "$OMAMAC_KILL" -0 "$pid" 2>/dev/null; then
+    "$OMAMAC_KILL" -9 "$pid" 2>/dev/null
+    omamac_state_clear "$REC_MARKER"
+    log_error "recording had to be force-killed; ${file} may be unplayable"
+    return 1
+  fi
+
+  omamac_state_clear "$REC_MARKER"
+  printf 'Recording saved to %s\n' "$(basename "$file")"
+}
+
+usage() {
+  cat >&2 <<'EOF'
+omamac capture --screenshot [--region "X,Y WxH"] [--copy|--save]
+               --record     [--region "X,Y WxH"] [--audio]
+               --stop
+               --status
+EOF
+}
+
+MODE=""
+REGION=""
+AUDIO="false"
+PROCESSING="both"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --screenshot|--record|--stop|--status) MODE="${1#--}" ;;
+    --region) REGION="${2:-}"; shift ;;
+    --audio)  AUDIO="true" ;;
+    --copy)   PROCESSING="copy" ;;
+    --save)   PROCESSING="save" ;;
+    *) log_error "unknown argument: $1"; usage; exit 1 ;;
+  esac
+  shift
+done
+
+case "$MODE" in
+  screenshot) screenshot "$REGION" "$PROCESSING" ;;
+  record)
+    # Upstream's screenrecording script is a TOGGLE: invoked while a recording
+    # is running it stops it rather than starting a second one. Same here, so
+    # the Record row cannot leave two recorders fighting over the display.
+    if recording_pid >/dev/null; then stop_recording; else start_recording "$REGION" "$AUDIO"; fi
+    ;;
+  stop)   stop_recording ;;
+  status) recording_pid >/dev/null && printf 'recording\n' || exit 1 ;;
+  *)      usage; exit 1 ;;
+esac

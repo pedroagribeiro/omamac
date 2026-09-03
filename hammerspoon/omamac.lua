@@ -20,6 +20,28 @@ local OMAMAC_BIN_PATH = OMAMAC_BIN or os.getenv("OMAMAC_BIN") or (OMAMAC .. "/bi
 local PATH = "/opt/homebrew/bin:/run/current-system/sw/bin:" ..
              HOME .. "/.nix-profile/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+-- The region picker, upstream's omarchy-capture-region. Loaded by path rather
+-- than `require`: OMAMAC is resolved at runtime and is not on package.path.
+--
+-- pcall so a broken picker costs Capture and not the whole menu — but the error
+-- is PRINTED, not swallowed. A bare pcall with the error thrown away is how the
+-- hs.json.encode(string) bug went unnoticed here for a whole feature's life.
+local okRegion, Region = pcall(dofile, OMAMAC .. "/hammerspoon/region.lua")
+if not okRegion then
+  print("omamac: region picker failed to load: " .. tostring(Region))
+  Region = nil
+end
+
+-- How long to wait after deleting the menu webview before freezing the screen.
+-- Deleting the window is not the same as it having left the screen, and a panel
+-- still composited when the freeze is taken ends up inside every screenshot.
+--
+-- Measured rather than guessed: sampling a patch of the panel's own frame, the
+-- scrim reads 0.322 mean brightness while it is up and 0.339 once it is gone,
+-- and every sample from 20ms after hide() onwards already reads the settled
+-- value. This is that with room to spare, while still feeling instant.
+local PANEL_CLEAR_DELAY = 0.15
+
 local function shquote(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
 
 local function run(args)
@@ -224,6 +246,35 @@ local function onMessage(message)
       if pushed == 0 then
         print(string.format("omamac: no %s previews available", kind))
       end
+    end)
+  elseif b.action == "capture" then
+    hideMenu()
+    if not Region then
+      hs.alert.show("omamac: region picker unavailable", alertStyle())
+      return
+    end
+    -- The panel is a full-screen webview. Deleting it is not the same as it
+    -- being off screen — freeze too soon and the menu is baked into the
+    -- screenshot, which is exactly what happened before this wait existed.
+    -- Measured, not guessed: see tests/README or the capture notes.
+    hs.timer.doAfter(PANEL_CLEAR_DELAY, function()
+      local shot = (b.kind == "screenshot")
+      Region.pick("smart",
+        -- A screenshot is taken FROM the frozen screen, so the freeze outlives
+        -- the pick; a recording must see live content, so it does not.
+        { keepFreeze = shot, stroke = rgb(themeStyle and themeStyle.colors and
+            themeStyle.colors.accent, { white = 1, alpha = 0.9 }) },
+        function(geo, dropFreeze)
+          if not geo then dropFreeze(); return end
+          local argv = shot and { "capture", "--screenshot", "--region", geo }
+                            or { "capture", "--record", "--region", geo }
+          if not shot and b.audio then argv[#argv + 1] = "--audio" end
+          runAsync(argv, function(_, stdout)
+            dropFreeze()
+            local msg = (stdout or ""):gsub("%s+$", "")
+            if msg ~= "" then hs.alert.show(msg, alertStyle()) end
+          end)
+        end)
     end)
   elseif b.action == "close" then
     hideMenu()

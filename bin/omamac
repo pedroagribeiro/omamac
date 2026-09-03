@@ -26,13 +26,14 @@ omamac <command> [args]
   doctor
   slack [--copy]
   aerospace [px|--list|--current|--render]
+  capture [--screenshot|--record|--stop|--status]
   preview <wallpaper>|--theme <name>|--paths [--theme]
 EOF
 }
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
-  theme|font|font-size|opacity|padding|blur|bg|menu-data|preview|doctor|slack|aerospace) exec "${OMAMAC_DIR}/bin/omamac-${cmd}" "$@" ;;
+  theme|font|font-size|opacity|padding|blur|bg|menu-data|preview|doctor|slack|aerospace|capture) exec "${OMAMAC_DIR}/bin/omamac-${cmd}" "$@" ;;
   --print-dir)   printf '%s\n' "$OMAMAC_DIR" ;;
   ""|-h|--help)  usage; [ -z "$cmd" ] && exit 1 || exit 0 ;;
   *)             printf 'omamac: unknown command: %s\n' "$cmd" >&2; usage; exit 1 ;;
