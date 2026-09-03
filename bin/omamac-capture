@@ -46,6 +46,12 @@ REC_MARKER="recording"
 # this is the difference between a recording and 200MB of unplayable mdat.
 STOP_TIMEOUT_TENTHS=50
 
+# How long to let a recorder prove it survived before believing it started —
+# comfortably more than the ~0.12s a rejected region takes to exit, and short
+# enough that starting still feels immediate. Overridable so tests need not
+# actually wait.
+RECORD_GRACE="${OMAMAC_RECORD_GRACE:-0.5}"
+
 # "X,Y WxH" (slurp's format, which the picker speaks) -> "x,y,w,h"
 # (screencapture -R's). Kept as its own function because it is the one piece of
 # geometry handling that is pure, and so the one that can be tested directly.
@@ -63,7 +69,20 @@ ensure_dir() {
 
 stamp() { date +'%Y-%m-%d_%H-%M-%S'; }
 
-# The pid in the marker is only ours if it is still alive AND still running a
+# `kill -0` is NOT "is this process running". A background child that has
+# exited but has not been waited for is a zombie, and kill -0 succeeds on
+# zombies — so a recorder that died instantly still looked alive, and the
+# failed-start check passed every time. `ps -o state=` reports Z for exactly
+# that case (verified), which is the distinction this needs.
+process_alive() {
+  local st
+  st=$("$OMAMAC_PS" -o state= -p "$1" 2>/dev/null) || return 1
+  [ -n "$st" ] || return 1
+  case "$st" in Z*) return 1 ;; esac
+  return 0
+}
+
+# The pid in the marker is only ours if it is still running AND still running a
 # screencapture writing the file we recorded. A recycled pid otherwise makes
 # `--status` claim a recording that ended, and `--stop` signal a stranger.
 recording_pid() {
@@ -71,6 +90,7 @@ recording_pid() {
   pid=$(omamac_state_get "$REC_MARKER" | sed -n '1p')
   file=$(omamac_state_get "$REC_MARKER" | sed -n '2p')
   [ -n "$pid" ] && [ -n "$file" ] || return 1
+  process_alive "$pid" || return 1
   cmd=$("$OMAMAC_PS" -o command= -p "$pid" 2>/dev/null) || return 1
   case "$cmd" in
     *screencapture*"$file"*) printf '%s' "$pid" ;;
@@ -141,17 +161,19 @@ start_recording() {
   "$SCREENCAPTURE" "${args[@]}" "$file" >/dev/null 2>&1 &
   local pid=$!
 
-  # Upstream waits for the output file to appear before believing the recorder
-  # started, and so does this: screencapture exits immediately on a rejected
-  # region or a missing Screen Recording permission, and recording a marker for
-  # a process that already died would leave the menu offering to stop nothing.
-  local waited=0
-  while "$OMAMAC_KILL" -0 "$pid" 2>/dev/null && [ ! -f "$file" ] && [ "$waited" -lt 50 ]; do
-    sleep 0.1
-    waited=$((waited + 1))
-  done
-
-  if ! "$OMAMAC_KILL" -0 "$pid" 2>/dev/null; then
+  # Upstream waits for the output FILE to appear before believing the recorder
+  # started. That works for gpu-screen-recorder and is wrong here: screencapture
+  # writes nothing at all until it stops — measured absent from 0.3s through 6s
+  # of a live recording, and present only after the SIGINT that finalises it. So
+  # that wait could only ever time out, costing five seconds on every start and
+  # delaying the menu's Stop row by the same.
+  #
+  # What actually separates a started recorder from a failed one is whether it
+  # is still running: a rejected region or a missing Screen Recording permission
+  # exits in about 0.12s with a non-zero status. This waits several times that
+  # and then asks.
+  sleep "$RECORD_GRACE"
+  if ! process_alive "$pid"; then
     log_error "recording did not start"
     return 1
   fi
@@ -172,12 +194,12 @@ stop_recording() {
   # and is killed outright by anything else, leaving an unplayable file.
   "$OMAMAC_KILL" -INT "$pid" 2>/dev/null
 
-  while "$OMAMAC_KILL" -0 "$pid" 2>/dev/null && [ "$count" -lt "$STOP_TIMEOUT_TENTHS" ]; do
+  while process_alive "$pid" && [ "$count" -lt "$STOP_TIMEOUT_TENTHS" ]; do
     sleep 0.1
     count=$((count + 1))
   done
 
-  if "$OMAMAC_KILL" -0 "$pid" 2>/dev/null; then
+  if process_alive "$pid"; then
     "$OMAMAC_KILL" -9 "$pid" 2>/dev/null
     omamac_state_clear "$REC_MARKER"
     log_error "recording had to be force-killed; ${file} may be unplayable"
