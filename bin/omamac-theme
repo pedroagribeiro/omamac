@@ -13,7 +13,19 @@ CLAUDE_DIR="${OMAMAC_CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
 OMAMAC_KILL="${OMAMAC_KILL:-kill}"
 OMAMAC_PS="${OMAMAC_PS:-ps}"
 
-theme_list()    { ls -1 "$THEMES_DIR" 2>/dev/null | sort; }
+# A theme is a DIRECTORY CONTAINING colors.toml — the same thing theme_set
+# requires before it will apply one. A bare `ls` here listed everything in the
+# directory, including files that are deliberately not themes:
+# themes/LICENSE.omarchy carries Omarchy's MIT notice beside the vendored
+# colours. That offered "LICENSE" as a selectable theme which nothing could
+# resolve, so the picker drew it as a blank panel.
+theme_list() {
+  local d
+  for d in "$THEMES_DIR"/*/; do
+    [ -f "${d}colors.toml" ] || continue
+    basename "$d"
+  done 2>/dev/null | sort
+}
 theme_current() { omamac_state_get theme.name; }
 
 # Signal every running Ghostty. Matches the executable path because macOS

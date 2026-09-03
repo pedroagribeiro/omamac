@@ -277,4 +277,24 @@ test_theme_switch_writes_the_delta_include() {
   [ "${tint#syntax #}" != "$bg" ] || fail "plus-style was not tinted at all"
 }
 
+# A theme is a DIRECTORY CONTAINING colors.toml — which is already what
+# theme_set requires, but the listing did not.
+#
+# The themes directory legitimately holds things that are not themes:
+# themes/LICENSE.omarchy carries Omarchy's MIT notice beside the vendored
+# colours, as that licence requires. An unfiltered `ls` offered it as a
+# selectable theme, and because nothing can resolve it, the picker rendered it
+# as a blank panel labelled "LICENSE" (labelFor strips the extension). The
+# existing theme tests could not see it: they iterate `themes/*/`, a directory
+# glob, so a stray FILE is invisible to them.
+test_list_only_returns_directories_that_are_actually_themes() {
+  setup_themes
+  printf 'a licence, not a theme\n' > "$OMAMAC_THEMES_DIR/LICENSE.omarchy"
+  printf 'a readme\n' > "$OMAMAC_THEMES_DIR/README.md"
+  mkdir -p "$OMAMAC_THEMES_DIR/half-vendored"   # a directory with no colors.toml
+  assert_eq "catppuccin-latte
+tokyo-night" "$("$OMAMAC_BIN" theme --list)" \
+    "only directories carrying a colors.toml may be offered as themes"
+}
+
 run_tests
