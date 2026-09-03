@@ -570,7 +570,7 @@ test_applications_is_a_section_not_an_action() {
   fi
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"100","options":["100"]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "apps-report")
-  assert_eq '["Ghostty","Slack"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
+  assert_eq '["AeroSpace","Ghostty","Slack"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
   assert_eq '"\uf198"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "Slack") | .icon')" \
     "each application keeps its own glyph, not the section's"
   # Opening the section must not run anything.
@@ -599,6 +599,19 @@ test_slack_row_runs_the_copy_instead_of_drilling_in() {
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"100","options":["100"]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "slack-copy")
   assert_eq '{"action":"apply","cmd":"slack","arg":"--copy"}' "$(printf '%s' "$out" | jq -c '.[-1]')"
+}
+
+# AeroSpace's gaps: its CLI cannot set them and its config has no include, so
+# omamac renders the whole config from a template. The menu just picks a number.
+test_gaps_applies_through_the_aerospace_command() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"100","options":["100"]},"gaps":{"current":"10","options":["8","10","12"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "gaps-select-apply")
+  # Opens on the gap in effect (10, index 1) and applies it.
+  assert_eq '{"action":"apply","cmd":"aerospace","arg":"10"}' "$(printf '%s' "$out" | jq -c '.[-1]')"
 }
 
 run_tests

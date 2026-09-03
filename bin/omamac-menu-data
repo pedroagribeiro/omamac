@@ -16,6 +16,7 @@ theme_cur=$("${OMAMAC_DIR}/bin/omamac-theme" --current)
 font_cur=$("${OMAMAC_DIR}/bin/omamac-font" --current)
 size_cur=$("${OMAMAC_DIR}/bin/omamac-font-size" --current)
 opacity_cur=$("${OMAMAC_DIR}/bin/omamac-opacity" --current)
+gaps_cur=$("${OMAMAC_DIR}/bin/omamac-aerospace" --current)
 bg_cur=$("${OMAMAC_DIR}/bin/omamac-bg" --current)
 
 # The menu paints itself in the active theme, so the host never flashes an
@@ -39,9 +40,11 @@ jq -n -c \
   --arg fc "$font_cur"  --argjson fo "$("${OMAMAC_DIR}/bin/omamac-font"  --list | arr)" \
   --arg sc "$size_cur"  --argjson so "$("${OMAMAC_DIR}/bin/omamac-font-size" --list | arr)" \
   --arg oc "$opacity_cur" --argjson oo "$("${OMAMAC_DIR}/bin/omamac-opacity" --list | arr)" \
+  --arg gc "$gaps_cur"    --argjson go "$("${OMAMAC_DIR}/bin/omamac-aerospace" --list | arr)" \
   --arg bc "$bg_cur"    --argjson bo "$("${OMAMAC_DIR}/bin/omamac-bg"    --list | arr)" \
   --arg bgc "$bg_color" --arg fgc "$fg_color" --arg ac "$accent_color" --arg selc "$sel_color" \
   '{theme:{current:$tc,options:$to},font:{current:$fc,options:$fo},
     fontSize:{current:$sc,options:$so},opacity:{current:$oc,options:$oo},
+    gaps:{current:$gc,options:$go},
     bg:{current:$bc,options:$bo},
     colors:{background:$bgc,foreground:$fgc,accent:$ac,selection_background:$selc}}'

@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# omamac-aerospace [px|--list|--current|--render]
+#
+# AeroSpace's gaps can only be changed by editing aerospace.toml — its CLI is
+# read-only (`config --get`, `--all-keys`), there is no include mechanism and no
+# --config-path override. But the config it reads is normally a symlink to a
+# version-controlled file, and writing generated values into git on every
+# nudge of a gap is not acceptable.
+#
+# So omamac renders it. A TEMPLATE holds the real config, and the values omamac
+# owns are marked with a trailing `# omamac:gaps` comment:
+#
+#   [gaps]
+#     inner.horizontal = 10  # omamac:gaps
+#
+# The template is a complete, valid AeroSpace config in its own right — the
+# marked lines carry real defaults, not placeholders — so if omamac never runs,
+# or is removed, copying the template into place still works. Only the rendered
+# output is machine-local and untracked.
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+CONFIG_ROOT="${OMAMAC_CONFIG_ROOT:-$HOME/.config}"
+AEROSPACE="${OMAMAC_AEROSPACE:-aerospace}"
+
+TEMPLATE="${CONFIG_ROOT}/aerospace/aerospace.template.toml"
+OUT="${CONFIG_ROOT}/aerospace/aerospace.toml"
+MARKER='# omamac:gaps'
+
+MIN=0
+MAX=40
+STEP=2
+
+gaps_list() { seq "$MIN" "$STEP" "$MAX"; }
+
+# The gap in effect: the chosen value, else whatever the template's first
+# marked line carries. The template's own numbers are the defaults, so this
+# reports something sensible before anything has been chosen.
+gaps_current() {
+  local v
+  v=$(omamac_state_get aerospace.gaps)
+  if [ -n "$v" ]; then printf '%s\n' "$v"; return 0; fi
+  [ -f "$TEMPLATE" ] || return 0
+  sed -n -E "s/^[^#]*=[[:space:]]*([0-9]+)[[:space:]]*${MARKER}.*/\1/p" "$TEMPLATE" | head -1
+}
+
+# Rewrite every marked line's value, leaving the rest of the template alone.
+render() {
+  local value="$1" tmp
+  [ -f "$TEMPLATE" ] || { log_error "no aerospace template at ${TEMPLATE}"; return 1; }
+  mkdir -p "$(dirname "$OUT")"
+  tmp="$(dirname "$OUT")/.aerospace.toml.$$"
+  # Only the number changes; the key, the spacing and the marker all survive,
+  # so the rendered file stays diffable against the template.
+  sed -E "s|^([^#]*=[[:space:]]*)[0-9]+([[:space:]]*${MARKER}.*)$|\1${value}\2|" \
+    "$TEMPLATE" > "$tmp" || { rm -f "$tmp"; log_error "could not render aerospace.toml"; return 1; }
+  # Renamed into place: AeroSpace may be told to reload at any moment, and a
+  # half-written config is a parse error rather than a slightly-wrong gap.
+  mv -f "$tmp" "$OUT"
+}
+
+# --dry-run first: a config AeroSpace rejects would otherwise be adopted and
+# leave the window manager on defaults, with the failure only visible in its
+# own logs.
+reload() {
+  command -v "$AEROSPACE" >/dev/null 2>&1 || return 0
+  if ! "$AEROSPACE" reload-config --dry-run >/dev/null 2>&1; then
+    log_error "the rendered aerospace.toml did not validate; not reloading"
+    return 1
+  fi
+  "$AEROSPACE" reload-config >/dev/null 2>&1 || { log_error "aerospace reload-config failed"; return 1; }
+}
+
+gaps_set() {
+  local px="$1" prev
+  case "$px" in
+    ''|*[!0-9]*) log_error "gaps must be a whole number of pixels: ${px}"; return 1 ;;
+  esac
+  if [ "$px" -lt "$MIN" ] || [ "$px" -gt "$MAX" ]; then
+    log_error "gaps must be between ${MIN} and ${MAX}: ${px}"
+    return 1
+  fi
+  # Speculative write, same shape as the font and opacity setters: render reads
+  # nothing back from state, but --current must not report a value that was
+  # never applied.
+  prev=$(omamac_state_get aerospace.gaps)
+  omamac_state_set aerospace.gaps "$px"
+  if ! render "$px" || ! reload; then
+    if [ -n "$prev" ]; then omamac_state_set aerospace.gaps "$prev"; else omamac_state_clear aerospace.gaps; fi
+    log_error "could not apply gaps ${px}; reverted to ${prev:-the template default}"
+    return 1
+  fi
+  log_info "Gaps set to ${px}px."
+}
+
+case "${1:-}" in
+  --list)    gaps_list ;;
+  --current) gaps_current ;;
+  --render)  render "$(gaps_current)" && reload ;;
+  "")        gaps_current ;;
+  *)         gaps_set "$1" ;;
+esac

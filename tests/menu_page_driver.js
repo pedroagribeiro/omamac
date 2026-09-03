@@ -238,41 +238,49 @@ switch (scenario) {
   case 'ghostty-menu-report':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('Enter');      // Applications
-    fireKey('Enter');      // Ghostty (row 0)
+    fireKey('ArrowDown');  // AeroSpace -> Ghostty
+    fireKey('Enter');
+    break;
+  case 'gaps-select-apply':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter');      // Applications
+    fireKey('Enter');      // AeroSpace (row 0)
+    fireKey('Enter');      // Gaps
+    fireKey('Enter');      // apply whatever is selected
     break;
   case 'size-open-and-report':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('Enter'); fireKey('Enter');          // Applications -> Ghostty
+    fireKey('Enter'); fireKey('ArrowDown'); fireKey('Enter');  // -> Ghostty
     fireKey('Enter');                            // Size (row 0)
     break;
   case 'size-select-apply':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('Enter'); fireKey('Enter');
+    fireKey('Enter'); fireKey('ArrowDown'); fireKey('Enter');
     fireKey('Enter');                            // enter Size, on the current
     fireKey('ArrowDown'); fireKey('Enter');      // one size up, apply
     break;
   case 'size-then-escape':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('Enter'); fireKey('Enter');
+    fireKey('Enter'); fireKey('ArrowDown'); fireKey('Enter');
     fireKey('Enter');                            // into Size
     fireKey('Escape');                           // back to Ghostty, ON Size
     break;
   case 'opacity-open-and-report':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('Enter'); fireKey('Enter');
+    fireKey('Enter'); fireKey('ArrowDown'); fireKey('Enter');
     fireKey('ArrowDown');                        // Size -> Opacity
     fireKey('Enter');
     break;
   case 'opacity-select-apply':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('Enter'); fireKey('Enter');
+    fireKey('Enter'); fireKey('ArrowDown'); fireKey('Enter');
     fireKey('ArrowDown'); fireKey('Enter');      // enter Opacity, on the current
     fireKey('ArrowDown'); fireKey('Enter');      // one step down, apply
     break;
   case 'slack-copy':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('Enter');                            // Applications
-    fireKey('ArrowDown');                        // Ghostty -> Slack
+    fireKey('ArrowDown'); fireKey('ArrowDown');  // AeroSpace -> Ghostty -> Slack
     fireKey('Enter');
     break;
   default:

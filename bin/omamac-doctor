@@ -229,6 +229,27 @@ else
   skip macos "defaults is not on PATH"
 fi
 
+# ── aerospace ──────────────────────────────────────────────────────────────
+# Only when the template is present: AeroSpace is optional, and a machine
+# without it must not be reported as broken.
+aero_template="${CONFIG_ROOT}/aerospace/aerospace.template.toml"
+aero_out="${CONFIG_ROOT}/aerospace/aerospace.toml"
+if [ ! -f "$aero_template" ]; then
+  skip aero "no aerospace template installed"
+elif [ ! -f "$aero_out" ]; then
+  fail aero "aerospace.toml has not been rendered — run: omamac aerospace --render"
+else
+  want_gaps=$("${OMAMAC_DIR}/bin/omamac-aerospace" --current)
+  if [ -z "$want_gaps" ]; then
+    skip aero "no gap size recorded"
+  elif [ "$(grep -c "= *${want_gaps} *# omamac:gaps" "$aero_out")" -gt 0 ] &&
+       [ "$(grep -c '# omamac:gaps' "$aero_out")" -eq "$(grep -c "= *${want_gaps} *# omamac:gaps" "$aero_out")" ]; then
+    pass aero "gaps are ${want_gaps}px on every marked value"
+  else
+    fail aero "the rendered aerospace.toml does not carry ${want_gaps}px — run: omamac aerospace --render"
+  fi
+fi
+
 # ── wallpaper ──────────────────────────────────────────────────────────────
 # Asks macOS what it is ACTUALLY showing, not just whether the recorded file
 # exists. That weaker check is why this whole class of drift hid: macOS

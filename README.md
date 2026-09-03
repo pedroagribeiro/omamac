@@ -252,6 +252,30 @@ leveldb that is locked while Slack runs, has no stable external API, and caches
 an **account-level** setting that syncs — so even a successful write would
 likely be overwritten, and a failed one would corrupt Slack rather than error.
 
+### AeroSpace
+
+**Applications → AeroSpace → Gaps** sets the window gaps, applied live via
+`aerospace reload-config` (validated with `--dry-run` first, so a config
+AeroSpace would reject is never adopted).
+
+AeroSpace can only change gaps by editing its config — its CLI is read-only
+and there is no include mechanism — and that config is usually
+version-controlled, where generated values do not belong. So omamac renders
+it. Link your config as `~/.config/aerospace/aerospace.template.toml` and mark
+the values omamac owns:
+
+```toml
+[gaps]
+  inner.horizontal = 10  # omamac:gaps
+  outer.top =        10  # omamac:gaps
+```
+
+omamac writes `aerospace.toml` beside it, substituting only the marked
+numbers. The template holds real defaults rather than placeholders, so it
+stays a complete, valid AeroSpace config on its own — nothing breaks if omamac
+never runs. `omamac aerospace --render` rebuilds it, which is worth running on
+activation so template edits take effect.
+
 ## omamac doctor
 
 ```bash

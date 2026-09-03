@@ -314,10 +314,13 @@
   // One per application under Applications. Adding an app is an entry here, in
   // that level's `items`, and either `into` (it has settings of its own) or
   // `runs` (a single action).
-  const APP_ICONS = { Ghostty: "\u{f120}", Slack: "\u{f198}" };
+  const APP_ICONS = {
+    AeroSpace: "\u{f0b0c}", Ghostty: "\u{f120}", Slack: "\u{f198}",
+  };
   // Ghostty's own settings. The font FAMILY is not one of them — see the
   // `font` level.
   const GHOSTTY_ICONS = { Size: "\u{f034}", Opacity: "\u{f042}" };
+  const AEROSPACE_ICONS = { Gaps: "\u{f0b0c}" };
   // Inside Font. Family reuses the Font glyph; Size is U+F034, fa-text-height.
   const FONT_MENU_ICONS = { Family: "\u{e659}", Size: "\u{f034}" };
 
@@ -431,10 +434,27 @@
     // bin/omamac-slack for why Slack in particular has no automatic path.
     apps: {
       crumb: "Applications", parent: "root",
-      items: () => ["Ghostty", "Slack"],
+      items: () => ["AeroSpace", "Ghostty", "Slack"],
       icon: (name) => APP_ICONS[name] || "",
-      into: { Ghostty: "ghostty" },
+      into: { AeroSpace: "aerospace", Ghostty: "ghostty" },
       runs: { Slack: ["slack", "--copy"] },
+    },
+    // AeroSpace's gaps. Its CLI cannot set them and its config has no include
+    // mechanism, so omamac renders the whole config from a template — see
+    // bin/omamac-aerospace.
+    aerospace: {
+      crumb: "AeroSpace", parent: "apps",
+      items: () => ["Gaps"],
+      icon: (name) => AEROSPACE_ICONS[name] || "",
+      into: { Gaps: "gaps" },
+    },
+    gaps: {
+      crumb: "Gaps", cmd: "aerospace", parent: "aerospace",
+      current: () => String(DATA.gaps?.current || ""),
+      items: () => DATA.gaps?.options || [],
+      icon: (name) =>
+        name === String(DATA.gaps?.current || "") ? CURRENT_MARK : AEROSPACE_ICONS.Gaps,
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
     ghostty: {
       crumb: "Ghostty", parent: "apps",
