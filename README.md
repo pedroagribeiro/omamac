@@ -127,6 +127,13 @@ The generated theme declares its own `appearance`, following the active theme,
 so there is no light/dark pair to switch between — use the plain string form
 rather than `{"mode": "system", …}`.
 
+omamac drives Zed's **colours only**, not its font. Fonts are settings rather
+than theme — Zed's theme schema has no font fields — and Zed has no include
+mechanism like Ghostty's `config-file`, so the only place to write one is
+`settings.json` itself. Where that file is version-controlled, writing it on
+every font change means generated values landing in git, which is why omamac
+leaves it alone. Set `buffer_font_family` yourself to match.
+
 **Claude Code** — in `~/.claude/settings.json`:
 
 ```json
