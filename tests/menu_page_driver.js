@@ -162,92 +162,42 @@ function stripReport() {
 }
 
 switch (scenario) {
+  // Root is Theme, Background, Applications. Applications holds Ghostty
+  // (Family, Size, Opacity) and Slack.
   case 'enter-enter':
-    fireKey('Enter');
-    fireKey('Enter');
+    fireKey('Enter');     // root -> Theme
+    fireKey('Enter');     // apply the selected theme
     break;
   case 'escape':
     fireKey('Escape');
     break;
+  case 'root-report':
+    break;                // report the root level exactly as first rendered
   case 'bg-render-thrice':
-    fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Opacity
-    fireKey('ArrowDown'); // root: Opacity -> Background
+    fireKey('ArrowDown'); // root: Theme -> Background
     fireKey('Enter');     // enter Background — first render() call
     fireKey('ArrowDown'); // second render() call, no thumbs supplied meanwhile
     fireKey('ArrowDown'); // third render() call, ditto
     break;
   case 'bg-select-apply':
-    fireKey('ArrowDown');  // root: Theme -> Font
-    fireKey('ArrowDown');  // root: Font -> Opacity
-    fireKey('ArrowDown');  // root: Opacity -> Background
-    fireKey('Enter');      // enter Background (coverflow), sel resets to 0
-    fireKey('ArrowRight'); // move selection to the second item, coverflow-style
-    fireKey('Enter');      // apply the now-selected (second) item
+    fireKey('ArrowDown'); // root: Theme -> Background
+    fireKey('Enter');     // enter Background (coverflow), sel resets to 0
+    fireKey('ArrowRight');// move selection to the second item, coverflow-style
+    fireKey('Enter');     // apply the now-selected (second) item
+    break;
+  case 'bg-unavailable-preview':
+    fireKey('ArrowDown'); // root: Theme -> Background
+    fireKey('Enter');     // enter Background — one bulk request for the level
+    // The host reporting that this item has no readable thumbnail. It must
+    // not be cached (an empty src renders as a broken image) and it must not
+    // provoke another batch — omamac already tried, in the one task it gets.
+    global.window.omamacSetPreview('only.jpg', '');
+    global.window.omamacSetPreview('only.jpg', '');
     break;
   case 'type-then-report':
     fireKey('t');
     fireKey('h');
     fireKey('e');
-    break;
-  case 'root-report':
-    break;              // report the root level exactly as first rendered
-  case 'opacity-select-apply':
-    fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Opacity
-    fireKey('Enter');     // enter Opacity, landing on the current value
-    fireKey('ArrowDown'); // one step down the list
-    fireKey('Enter');     // apply it
-    break;
-  case 'opacity-open-and-report':
-    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('Enter');
-    break;
-  case 'slack-copy':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('ArrowDown'); fireKey('ArrowDown'); // root: ... -> Applications
-    fireKey('Enter');                           // enter Applications
-    fireKey('Enter');                           // Slack (row 0)
-    break;
-  case 'apps-report':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('ArrowDown'); fireKey('ArrowDown'); // root: ... -> Applications
-    fireKey('Enter');
-    break;
-  case 'apps-then-escape':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('Enter');   // into Applications
-    fireKey('Escape');  // back out — must land on root, ON Applications
-    break;
-  case 'font-menu-report':
-    fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('Enter');     // enter Font — a submenu of Family and Size
-    break;
-  case 'font-open-and-report':
-    fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('Enter');     // enter Font
-    fireKey('Enter');     // Family (row 0) -> the family list
-    break;
-  case 'size-open-and-report':
-    fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('Enter');     // enter Font
-    fireKey('ArrowDown'); // Family -> Size
-    fireKey('Enter');     // enter Size
-    break;
-  case 'size-select-apply':
-    fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('Enter');     // enter Font
-    fireKey('ArrowDown'); // Family -> Size
-    fireKey('Enter');     // enter Size, landing on the current size
-    fireKey('ArrowDown'); // one size up
-    fireKey('Enter');     // apply it
-    break;
-  case 'size-then-escape':
-    fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('Enter');     // enter Font
-    fireKey('ArrowDown'); // Family -> Size
-    fireKey('Enter');     // enter Size
-    fireKey('Escape');    // back out — must land on Font, ON the Size row
     break;
   case 'theme-select-apply':
     fireKey('Enter');      // root -> Theme (the coverflow)
@@ -263,7 +213,7 @@ switch (scenario) {
     fireKey('z');
     break;
   case 'theme-misdelivered-preview':
-    fireKey('Enter');      // root -> Theme; requests a preview for "nord"
+    fireKey('Enter');      // root -> Theme; requests previews for the level
     // The host answering with the WRONG kind for that same name. Nothing in
     // the message distinguishes it except `kind`, which is exactly the point.
     global.window.omamacSetPreview('nord', 'data:image/jpeg;base64,WRONG', 'bg');
@@ -272,16 +222,61 @@ switch (scenario) {
     // kind" apart from "pushes are being dropped".
     global.window.omamacSetPreview('nord', 'data:image/jpeg;base64,RIGHT', 'theme');
     break;
-  case 'bg-unavailable-preview':
-    fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Opacity
-    fireKey('ArrowDown'); // root: Opacity -> Background
-    fireKey('Enter');     // enter Background — one bulk request for the level
-    // The host reporting that this item has no readable thumbnail. It must
-    // not be cached (an empty src renders as a broken image) and it must not
-    // provoke another batch — omamac already tried, in the one task it gets.
-    global.window.omamacSetPreview('only.jpg', '');
-    global.window.omamacSetPreview('only.jpg', '');
+  case 'apps-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // root -> Applications
+    fireKey('Enter');
+    break;
+  case 'apps-then-escape':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter');   // into Applications
+    fireKey('Escape');  // back out — must land on root, ON Applications
+    break;
+  case 'ghostty-menu-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // root -> Applications
+    fireKey('Enter');                           // Applications
+    fireKey('Enter');                           // Ghostty (row 0)
+    break;
+  case 'font-open-and-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');         // Applications -> Ghostty
+    fireKey('Enter');                           // Family (row 0)
+    break;
+  case 'size-open-and-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');
+    fireKey('ArrowDown');                       // Family -> Size
+    fireKey('Enter');
+    break;
+  case 'size-select-apply':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('Enter');     // enter Size, on the current
+    fireKey('ArrowDown'); fireKey('Enter');     // one size up, apply
+    break;
+  case 'size-then-escape':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('Enter');     // into Size
+    fireKey('Escape');                          // back to Ghostty, ON Size
+    break;
+  case 'opacity-open-and-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // Family -> Size -> Opacity
+    fireKey('Enter');
+    break;
+  case 'opacity-select-apply':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter');                           // enter Opacity, on the current
+    fireKey('ArrowDown'); fireKey('Enter');     // one step down, apply
+    break;
+  case 'slack-copy':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // root -> Applications
+    fireKey('Enter');                           // Applications
+    fireKey('ArrowDown');                       // Ghostty -> Slack
+    fireKey('Enter');
     break;
   default:
     console.error('unknown scenario: ' + scenario);
@@ -302,7 +297,7 @@ function listReport() {
 }
 
 if (['font-open-and-report', 'root-report', 'size-open-and-report',
-     'font-menu-report', 'size-then-escape', 'opacity-open-and-report',
+     'ghostty-menu-report', 'size-then-escape', 'opacity-open-and-report',
      'apps-report', 'apps-then-escape'].includes(scenario)) {
   process.stdout.write(JSON.stringify({
     messages,

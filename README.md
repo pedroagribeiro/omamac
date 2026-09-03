@@ -199,7 +199,7 @@ OMAMAC_FONT_FILTER='.' omamac font --list          # everything available
 ### Transparency
 
 `omamac opacity 85` makes the terminal background 85% opaque; the menu offers
-50–100% under **Opacity**. Like the font family and size, it is a preference
+50–100% under **Applications → Ghostty → Opacity**. Like the font family and size, it is a preference
 rather than a theme property, so it survives theme switches — Omarchy has no
 equivalent (its own "Transparency" entry toggles the Quickshell bar, not the
 terminal), so this is omamac's own.
@@ -220,9 +220,12 @@ current theme to your clipboard; paste it into any Slack message and Slack
 renders its own *"Switch sidebar theme"* button. `omamac slack` prints it
 instead.
 
-**Applications** is where apps that cannot be driven automatically live, so
-more can be added beside Slack. Adding one is an entry in that level's `items`
-and its command in `runs` (`menu/menu.html`), plus a glyph in `APP_ICONS`.
+**Applications** holds everything that belongs to a specific app: Ghostty's
+family, size and opacity together, and Slack's copy action. Theme and
+Background stay at the root, since they are properties of the desktop rather
+than of any one application. Adding an app is an entry in that level's `items`
+plus either `into` (it has settings of its own) or `runs` (a single action),
+and a glyph in `APP_ICONS` — all in `menu/menu.html`.
 
 Why not automatic: Slack registers no theme deep link (only `slack://app`,
 `channel`, `doc`, `noop` and `open`), and its sole local store is an Electron

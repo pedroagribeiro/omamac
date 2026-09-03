@@ -308,12 +308,14 @@
   // the terminal. U+F042 (fa-adjust, a half-filled circle) was chosen here and
   // verified present by parsing the Nerd Font's cmap, like the Size glyph.
   const ROOT_ICONS = {
-    Theme: "\u{f0e0c}", Font: "\u{e659}", Opacity: "\u{f042}", Background: "\u{f03e}",
-    Applications: "\u{f00a}",
+    Theme: "\u{f0e0c}", Background: "\u{f03e}", Applications: "\u{f00a}",
   };
-  // One per application under Applications. Adding an app here and to that
-  // level's `items`/`runs` is the whole of what it takes to add one.
-  const APP_ICONS = { Slack: "\u{f198}" };
+  // One per application under Applications. Adding an app is an entry here, in
+  // that level's `items`, and either `into` (it has settings of its own) or
+  // `runs` (a single action).
+  const APP_ICONS = { Ghostty: "\u{f120}", Slack: "\u{f198}" };
+  // Ghostty's own settings.
+  const GHOSTTY_ICONS = { Family: "\u{e659}", Size: "\u{f034}", Opacity: "\u{f042}" };
   // Inside Font. Family reuses the Font glyph; Size is U+F034, fa-text-height.
   const FONT_MENU_ICONS = { Family: "\u{e659}", Size: "\u{f034}" };
 
@@ -392,57 +394,75 @@
   // of Theme and Background, so it lives under Font rather than beside it.
   // Omarchy nests the same way where it has a settings group with more than
   // one knob (style.bar -> Position -> Top/Bottom).
+  // Every level names its `parent`, so Escape walks back up one step.
+  //
+  // Theme and Background are properties of the desktop as a whole and stay at
+  // the root. Everything else belongs to a specific application, so it lives
+  // under Applications — Ghostty's font family, size and transparency
+  // together, rather than split between the root and a section.
+  //
+  // A level's rows do one of three things: open a submenu (`into`), run a
+  // command outright (`runs`), or apply the value they name (`cmd`).
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Font", "Opacity", "Background", "Applications"],
+      items: () => ["Theme", "Background", "Applications"],
       icon: (name) => ROOT_ICONS[name] || "",
-      into: {
-        Theme: "theme", Font: "font", Opacity: "opacity", Background: "bg",
-        Applications: "apps",
-      },
+      into: { Theme: "theme", Background: "bg", Applications: "apps" },
     },
     theme: {
       crumb: "Theme", cmd: "theme", picker: "theme", labels: true, parent: "root",
       current: () => DATA.theme.current || "",
       items: () => DATA.theme.options || [],
     },
-    font: {
-      crumb: "Font", parent: "root",
-      items: () => ["Family", "Size"],
-      icon: (name) => FONT_MENU_ICONS[name] || "",
-      into: { Family: "fontfamily", Size: "fontsize" },
+    bg: {
+      crumb: "Background", cmd: "bg", picker: "bg", labels: false, parent: "root",
+      // bg.current is an absolute path; the options are basenames.
+      current: () => String(DATA.bg.current || "").split("/").pop(),
+      items: () => DATA.bg.options || [],
+    },
+    // Per-application. Some apps have settings of their own; some can only be
+    // handed a theme to paste, because omamac cannot drive them — see
+    // bin/omamac-slack for why Slack in particular has no automatic path.
+    apps: {
+      crumb: "Applications", parent: "root",
+      items: () => ["Ghostty", "Slack"],
+      icon: (name) => APP_ICONS[name] || "",
+      into: { Ghostty: "ghostty" },
+      runs: { Slack: ["slack", "--copy"] },
+    },
+    ghostty: {
+      crumb: "Ghostty", parent: "apps",
+      items: () => ["Family", "Size", "Opacity"],
+      icon: (name) => GHOSTTY_ICONS[name] || "",
+      into: { Family: "fontfamily", Size: "fontsize", Opacity: "opacity" },
     },
     // `width` follows Menu.qml:111, which gives style.font (and the
     // screen-record menu, which omamac has no equivalent of) 520 and every
     // other card 300. Family names are what need that room.
     fontfamily: {
-      crumb: "Family", cmd: "font", parent: "font",
+      crumb: "Family", cmd: "font", parent: "ghostty",
       current: () => DATA.font.current || "",
       items: () => DATA.font.options || [],
       icon: (name) =>
-        name === (DATA.font.current || "") ? CURRENT_MARK : FONT_MENU_ICONS.Family,
+        name === (DATA.font.current || "") ? CURRENT_MARK : GHOSTTY_ICONS.Family,
       width: 520,
       // Deliberate deviation — see ROWS above.
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
-    // Ghostty points, shown exactly as they are written to the config. Same
-    // provider-row treatment as Family — a glyph per row, a check on the
-    // active one — since it is the same kind of list.
+    // Ghostty points, shown exactly as they are written to the config.
     fontsize: {
-      crumb: "Size", cmd: "font-size", parent: "font",
+      crumb: "Size", cmd: "font-size", parent: "ghostty",
       current: () => String(DATA.fontSize?.current || ""),
       items: () => DATA.fontSize?.options || [],
       icon: (name) =>
-        name === String(DATA.fontSize?.current || "") ? CURRENT_MARK : FONT_MENU_ICONS.Size,
+        name === String(DATA.fontSize?.current || "") ? CURRENT_MARK : GHOSTTY_ICONS.Size,
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
-    // Terminal transparency: a user preference, not a theme property, so it
-    // survives theme switches exactly as the font family and size do. Shown as
-    // percentages because that is what the picker should say — Ghostty's own
+    // Percentages, because that is what the picker should say — Ghostty's own
     // 0..1 float is a rendering detail.
     opacity: {
-      crumb: "Opacity", cmd: "opacity", parent: "root",
+      crumb: "Opacity", cmd: "opacity", parent: "ghostty",
       argOf: (name) => name.replace(/%$/, ""),
       // The displayed form, because `current` is matched against the ITEMS to
       // decide which row to open on — and those carry the % suffix.
@@ -452,27 +472,8 @@
       },
       items: () => (DATA.opacity?.options || []).map((v) => String(v) + "%"),
       icon: (name) =>
-        name === String(DATA.opacity?.current || "") + "%" ? CURRENT_MARK : ROOT_ICONS.Opacity,
+        name === String(DATA.opacity?.current || "") + "%" ? CURRENT_MARK : GHOSTTY_ICONS.Opacity,
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
-    },
-    // Applications omamac cannot drive directly. Each row copies that app's
-    // theme to the clipboard for a manual paste — see bin/omamac-slack for why
-    // Slack in particular has no automatic path. Rows here RUN a command
-    // rather than opening a level or applying a value.
-    //
-    // Adding an application is two lines: an entry in `items` and the command
-    // in `runs`, plus its glyph in APP_ICONS above.
-    apps: {
-      crumb: "Applications", parent: "root",
-      items: () => ["Slack"],
-      icon: (name) => APP_ICONS[name] || "",
-      runs: { Slack: ["slack", "--copy"] },
-    },
-    bg: {
-      crumb: "Background", cmd: "bg", picker: "bg", labels: false, parent: "root",
-      // bg.current is an absolute path; the options are basenames.
-      current: () => String(DATA.bg.current || "").split("/").pop(),
-      items: () => DATA.bg.options || [],
     },
   };
 

@@ -332,8 +332,8 @@ test_root_rows_keep_their_own_icons() {
   # from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  assert_eq '["\udb83\ude0c","\ue659","\uf042","\uf03e","\uf00a"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
-    "root must keep its five glyphs"
+  assert_eq '["\udb83\ude0c","\uf03e","\uf00a"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root keeps only what is not app-specific: Theme, Background, Applications"
 }
 
 # The Font menu is WIDER than every other card. Menu.qml:111 special-cases
@@ -487,21 +487,24 @@ test_size_enter_applies_via_the_font_size_command() {
 }
 
 
-# Size is a property OF the font, not a peer of Theme and Background, so Font
-# is a submenu holding Family and Size. Omarchy nests the same way wherever a
-# settings group has more than one knob (style.bar -> Position -> Top/Bottom).
-test_font_is_a_submenu_of_family_and_size() {
+# Everything omamac writes into Ghostty's config — family, size, transparency —
+# lives together under Applications > Ghostty, rather than some of it at the
+# root. Omarchy nests the same way wherever a settings group has more than one
+# knob (style.bar -> Position -> Top/Bottom).
+test_ghostty_groups_its_settings_together() {
   if ! command -v node >/dev/null 2>&1; then
     fail "no JS engine available to drive menu.html — cannot verify the page"
     return
   fi
   local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Menlo"]},"fontSize":{"current":"16","options":["16"]},"bg":{"current":"","options":[]},"colors":{}}'
-  local out; out=$(run_driver "$data" "font-menu-report")
-  assert_eq '["Family","Size"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
+  local out; out=$(run_driver "$data" "ghostty-menu-report")
+  # Every Ghostty setting in one place, rather than split between the root and
+  # a section — which is what made moving Opacity alone the wrong shape.
+  assert_eq '["Family","Size","Opacity"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
   # Entering Font must NOT apply anything — it is a submenu, and a stray
   # apply here would try to set a font family literally called "Family".
   assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "apply")] | length')" \
-    "opening the Font submenu must not apply anything"
+    "opening the Ghostty submenu must not apply anything"
   # Neither row is a picker level, so no previews may be requested either.
   assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "previews")] | length')"
 }
@@ -517,8 +520,8 @@ test_escape_walks_up_one_level_and_keeps_its_place() {
   local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Menlo"]},"fontSize":{"current":"16","options":["14","16"]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "size-then-escape")
   # Back at Font, not at the root...
-  assert_eq '["Family","Size"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
-    "Escape from Size must land on Font, not jump to the root"
+  assert_eq '["Family","Size","Opacity"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+    "Escape from Size must land on Ghostty, not jump to the root"
   # ...with Size still highlighted, so the way back in is where you left it.
   assert_eq "Size" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')"
   # And it must not have closed the menu.
@@ -566,7 +569,7 @@ test_applications_is_a_section_not_an_action() {
   fi
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"100","options":["100"]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "apps-report")
-  assert_eq '["Slack"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
+  assert_eq '["Ghostty","Slack"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
   assert_eq '"\uf198"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "Slack") | .icon')" \
     "each application keeps its own glyph, not the section's"
   # Opening the section must not run anything.
