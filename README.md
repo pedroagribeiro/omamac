@@ -173,6 +173,13 @@ recording goes to `~/Movies` and runs until you pick **Stop Recording** — a ro
 that only exists while something is recording, which is upstream's `when:` on
 that entry, answered here by `menu-data`.
 
+**Color** is the third row, Omarchy's own `hyprpicker -a`. The screen freezes
+undimmed, a box marks the pixel under the cursor with its hex beside it, and
+releasing the mouse copies `#rrggbb` to the clipboard. The colour comes from the
+frozen screenshot rather than a fresh sample of the live screen, so the pixel you
+clicked and the value you get cannot disagree — verified against a capture's own
+decoded PNG bytes.
+
 The freeze is not decoration. A screenshot is taken from the frozen image
 rather than the live screen, so what you framed is what you get, and the dim is
 torn down before the capture so it never lands in the file. That is upstream's
@@ -198,11 +205,20 @@ And one divergence: upstream writes `.mp4`. `screencapture` writes a QuickTime
 container whatever the extension — verified, major brand `qt  ` — so omamac
 writes `.mov` rather than misnaming the file.
 
-Two things worth knowing if you extend this. `screencapture -v` creates nothing
-at all until it stops, so "has the file appeared" cannot tell you a recording
-started; omamac waits a moment and checks the process is still alive, since a
-rejected region exits in about 0.12s. And it finalises on **SIGINT**
+Three things worth knowing if you extend this. `screencapture -v` creates
+nothing at all until it stops, so "has the file appeared" cannot tell you a
+recording started; omamac waits a moment and checks the process is still alive,
+since a rejected region exits in about 0.12s. It finalises on **SIGINT**
 specifically — anything else kills it mid-write and leaves an unplayable file.
+
+And the colour picker shows no swatch on purpose. An `hs.canvas` fill is painted
+through a colour conversion: draw `#3fa7d6` and the pixel that lands on screen
+is `#52b4db`, with no declared colour space changing it — hex, explicit
+components, `space="sRGB"`, `space="P3"` and `asRGB` all measured identical. A
+swatch would show a different colour from the one it reports. Reading is exact;
+only drawing shifts. Upstream magnifies instead, which would be both faithful
+and colour-correct, but an image element scaled to a whole screen renders empty
+inside a full-screen canvas.
 
 </details>
 
@@ -456,7 +472,8 @@ omamac padding    [points|--list|--current]
 omamac blur       [radius|--list|--current]
 omamac bg         [name|--next|--reapply|--list|--current]
 omamac aerospace  [gaps|--workspace <n>=<monitor>|--workspaces|--monitors|--render|--list|--current]
-omamac capture    --screenshot|--record [--region "X,Y WxH"] [--audio] | --stop | --status
+omamac capture    --screenshot|--record [--region "X,Y WxH"] [--audio]
+                  --color "#rrggbb" | --stop | --status
 omamac slack      [--copy]
 omamac doctor
 omamac menu-data
