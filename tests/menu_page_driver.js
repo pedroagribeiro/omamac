@@ -202,6 +202,11 @@ switch (scenario) {
   case 'opacity-open-and-report':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('Enter');
     break;
+  case 'slack-copy':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // root: ... -> Slack (last)
+    fireKey('Enter');
+    break;
   case 'font-menu-report':
     fireKey('ArrowDown'); // root: Theme -> Font
     fireKey('Enter');     // enter Font — a submenu of Family and Size

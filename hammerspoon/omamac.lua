@@ -116,7 +116,16 @@ local function onMessage(message)
   if type(b) ~= "table" then return end
   if b.action == "apply" and b.cmd and b.arg then
     hideMenu()
-    runAsync({ b.cmd, b.arg })          -- async: never block the UI on a switch
+    -- async: never block the UI on a switch.
+    runAsync({ b.cmd, b.arg }, function(_, stdout)
+      -- An applied command that writes to STDOUT is reporting something the
+      -- user has to see from a menu that has already closed. Every log_* in
+      -- omamac goes to stderr and the setter paths print nothing, so this
+      -- channel is free — `slack --copy` uses it, since a clipboard copy has
+      -- no other way to confirm it happened.
+      local msg = (stdout or ""):gsub("%s+$", "")
+      if msg ~= "" then hs.alert.show(msg) end
+    end)
   elseif b.action == "previews" then
     local wv = menuWV
     -- ONE task for the whole level, never one per item. Measured against the

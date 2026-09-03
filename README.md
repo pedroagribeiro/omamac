@@ -178,6 +178,7 @@ omamac font       [name|--list|--current]
 omamac font-size  [points|--list|--current]
 omamac opacity    [percent|--list|--current]
 omamac bg         [file|--next|--list|--current]
+omamac slack      [--copy]
 omamac doctor
 omamac menu-data
 omamac preview    <wallpaper>|--theme <name>|--paths [--theme]
@@ -210,6 +211,19 @@ with it and omamac does not touch that, so set it once in your own config:
 background-blur = true
 background-blur-radius = 20
 ```
+
+### Slack
+
+Slack cannot be themed directly, so omamac produces the string and stops
+there. **Slack** in the menu copies the sidebar theme for the current theme to
+your clipboard; paste it into any Slack message and Slack renders its own
+*"Switch sidebar theme"* button. `omamac slack` prints it instead.
+
+Why not automatic: Slack registers no theme deep link (only `slack://app`,
+`channel`, `doc`, `noop` and `open`), and its sole local store is an Electron
+leveldb that is locked while Slack runs, has no stable external API, and caches
+an **account-level** setting that syncs — so even a successful write would
+likely be overwritten, and a failed one would corrupt Slack rather than error.
 
 ## omamac doctor
 

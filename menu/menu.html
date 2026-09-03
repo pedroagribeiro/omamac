@@ -309,6 +309,7 @@
   // verified present by parsing the Nerd Font's cmap, like the Size glyph.
   const ROOT_ICONS = {
     Theme: "\u{f0e0c}", Font: "\u{e659}", Opacity: "\u{f042}", Background: "\u{f03e}",
+    Slack: "\u{f198}",
   };
   // Inside Font. Family reuses the Font glyph; Size is U+F034, fa-text-height.
   const FONT_MENU_ICONS = { Family: "\u{e659}", Size: "\u{f034}" };
@@ -391,9 +392,16 @@
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Font", "Opacity", "Background"],
+      items: () => ["Theme", "Font", "Opacity", "Background", "Slack"],
       icon: (name) => ROOT_ICONS[name] || "",
       into: { Theme: "theme", Font: "font", Opacity: "opacity", Background: "bg" },
+      // An entry that DOES something rather than opening a level. Slack cannot
+      // be themed directly — it has no theme deep link and its only local store
+      // is a locked Electron leveldb caching an account-level setting — so this
+      // copies the sidebar theme string for the current theme instead. Pasting
+      // it into any Slack message makes Slack render its own "Switch sidebar
+      // theme" button.
+      runs: { Slack: ["slack", "--copy"] },
     },
     theme: {
       crumb: "Theme", cmd: "theme", picker: "theme", labels: true, parent: "root",
@@ -665,8 +673,10 @@
     const items = visible();
     if (!items.length) return;
     const pick = items[sel];
-    // A level with `into` is a submenu: its rows drill down. Anything else
-    // applies the picked value through that level's command.
+    // Three kinds of row: one that RUNS a command outright, one that opens a
+    // submenu, and one that applies the value it names.
+    const run = LEVELS[level].runs && LEVELS[level].runs[pick];
+    if (run) return send({ action: "apply", cmd: run[0], arg: run[1] });
     const into = LEVELS[level].into;
     if (into) {
       enterLevel(into[pick]);

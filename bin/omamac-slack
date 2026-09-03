@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# omamac-slack [--copy] — Slack sidebar theme string for the current theme.
+#
+# Slack cannot be driven directly. It registers only slack://app, channel, doc,
+# noop and open — no theme deep link — and its sole local store is an Electron
+# leveldb that is locked while Slack runs, has no stable external API, and is a
+# cache of an ACCOUNT-level setting that syncs, so a successful write would
+# likely be overwritten. Corrupting it would break Slack rather than fail.
+#
+# So this produces the string and stops there. Pasting it into any Slack
+# message makes Slack render its own "Switch sidebar theme" button — Slack's
+# supported sharing path, one click, nothing to go wrong.
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+source "${OMAMAC_DIR}/lib/colors.sh"
+THEMES_DIR="${OMAMAC_THEMES_DIR:-${OMAMAC_DIR}/themes}"
+PBCOPY="${OMAMAC_PBCOPY:-pbcopy}"
+
+theme=$(omamac_state_get theme.name)
+[ -n "$theme" ] || { log_error "no theme applied yet"; exit 1; }
+toml="${THEMES_DIR}/${theme}/colors.toml"
+[ -f "$toml" ] || { log_error "theme ${theme} has no colors.toml"; exit 1; }
+
+c() { omamac_hex_or_warn "$toml" "$1" "$theme"; }
+m() {
+  local a b
+  a=$(c "$1"); b=$(c "$2")
+  omamac_mix "$a" "$b" "$3" || printf '%s' "$a"
+}
+
+# Slack's custom sidebar theme is eight colours in a fixed order. Named here
+# because the order is the entire format — there are no keys, and getting one
+# slot wrong is invisible until you look at the sidebar.
+#
+#   1 Column BG        the sidebar background
+#   2 Menu BG Hover    hover on the workspace menu
+#   3 Active Item      the selected channel's background
+#   4 Active Item Text text on that selected channel
+#   5 Hover Item       a hovered channel's background
+#   6 Text Color       everything else
+#   7 Active Presence  the online dot
+#   8 Mention Badge    the unread mention count
+printf -v THEME_STRING '%s,%s,%s,%s,%s,%s,%s,%s' \
+  "$(c background)" \
+  "$(m background foreground 12%)" \
+  "$(c accent)" \
+  "$(c background)" \
+  "$(c selection_background)" \
+  "$(c foreground)" \
+  "$(c green)" \
+  "$(c red)"
+
+if [ "${1:-}" = "--copy" ]; then
+  if ! printf '%s' "$THEME_STRING" | "$PBCOPY" 2>/dev/null; then
+    log_error "could not copy to the clipboard"
+    exit 1
+  fi
+  # stdout, deliberately: the Hammerspoon host surfaces an applied command's
+  # stdout as an alert, which is the only feedback a clipboard copy can give
+  # from a menu that closes as it runs. Every log_* goes to stderr, so this
+  # channel is otherwise unused by the commands the menu applies.
+  printf 'Slack theme for %s copied — paste it into any Slack message\n' "$theme"
+else
+  printf '%s\n' "$THEME_STRING"
+fi

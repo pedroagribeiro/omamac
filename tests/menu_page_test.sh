@@ -332,8 +332,8 @@ test_root_rows_keep_their_own_icons() {
   # from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  assert_eq '["\udb83\ude0c","\ue659","\uf042","\uf03e"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
-    "root must keep its four glyphs"
+  assert_eq '["\udb83\ude0c","\ue659","\uf042","\uf03e","\uf198"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root must keep its five glyphs"
 }
 
 # The Font menu is WIDER than every other card. Menu.qml:111 special-cases
@@ -550,6 +550,21 @@ test_opacity_level_shows_percentages_and_marks_the_current_one() {
   assert_eq "90%" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')" \
     "the level must open on the opacity in effect"
   assert_eq '"\u2713"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "90%") | .icon')"
+}
+
+
+# Slack is a row that RUNS something rather than opening a level: it copies the
+# sidebar theme string, because Slack itself cannot be driven (no theme deep
+# link, and its only local store is a locked Electron leveldb caching an
+# account-level setting).
+test_slack_row_runs_the_copy_instead_of_drilling_in() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"100","options":["100"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "slack-copy")
+  assert_eq '{"action":"apply","cmd":"slack","arg":"--copy"}' "$(printf '%s' "$out" | jq -c '.[-1]')"
 }
 
 run_tests
