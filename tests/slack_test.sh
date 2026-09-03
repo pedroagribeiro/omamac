@@ -64,10 +64,11 @@ test_copy_confirms_on_stdout_for_the_menu_alert() {
   setup_slack
   local out; out=$("$OMAMAC_BIN" slack --copy 2>/dev/null)
   assert_contains "$out" "copied"
-  assert_contains "$out" "tokyo-night"
   case "$out" in
     *"#"*) fail "the confirmation must not be the colour string itself; it is shown as an alert" ;;
   esac
+  # It is rendered as a banner over the desktop, so it has to stay short.
+  [ "${#out}" -le 30 ] || fail "the confirmation is a banner, not a sentence: ${#out} chars"
 }
 
 test_plain_form_prints_only_the_string() {

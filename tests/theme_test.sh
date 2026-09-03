@@ -217,13 +217,17 @@ EOF
   export OMAMAC_FETCH="$TMPDIR_TEST/slow-fetch"
   export OMAMAC_OMARCHY_RAW="file://irrelevant" OMAMAC_OMARCHY_REV="rev"
 
+  # Sub-second timing, deliberately. `date +%s` has one-second granularity, so
+  # an operation taking about a second reads as 1 or 2 depending only on where
+  # it falls within a second — this assertion was flaky by construction once
+  # the switch grew past ~0.5s, and failed against perfectly good code.
   local start end elapsed
-  start=$(date +%s)
+  start=$(python3 -c 'import time; print(time.time())')
   "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
-  end=$(date +%s)
-  elapsed=$((end - start))
-  assert_eq 1 "$([ "$elapsed" -lt 2 ] && echo 1 || echo 0)" \
-    "theme switch must not block on the wallpaper fetch (took ${elapsed}s)"
+  end=$(python3 -c 'import time; print(time.time())')
+  elapsed=$(python3 -c "print(f'{$end - $start:.2f}')")
+  assert_eq 1 "$(python3 -c "print(1 if $end - $start < 2 else 0)")" \
+    "theme switch must not block on the 2s wallpaper fetch (took ${elapsed}s)"
 
   local tries=0
   while [ ! -s "$OMAMAC_CACHE/backgrounds/tokyo-night/1-alpha.jpg" ] && [ "$tries" -lt 50 ]; do

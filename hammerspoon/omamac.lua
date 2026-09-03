@@ -85,6 +85,46 @@ local function fileDataURI(path)
   return "data:image/jpeg;base64," .. hs.base64.encode(bytes)
 end
 
+-- The active theme's colours and font, cached from the menu-data the menu is
+-- built with. Used to style the confirmation alert so it matches the card
+-- rather than appearing in Hammerspoon's default black box. Re-read on every
+-- open, so it follows a theme switch without any extra work.
+local themeStyle = nil
+
+-- #rrggbb -> the {red,green,blue,alpha} table Hammerspoon wants, falling back
+-- to the menu's own defaults for anything malformed or missing.
+local function rgb(hex, fallback)
+  if type(hex) ~= "string" or not hex:match("^#%x%x%x%x%x%x$") then hex = fallback end
+  return {
+    red   = tonumber(hex:sub(2, 3), 16) / 255,
+    green = tonumber(hex:sub(4, 5), 16) / 255,
+    blue  = tonumber(hex:sub(6, 7), 16) / 255,
+    alpha = 1,
+  }
+end
+
+-- Matches the menu card: opaque theme background, a 1px foreground border,
+-- square corners (Style.qml's cornerRadius is 0), and the theme's own
+-- monospace font at the header's size. Only the keys hs.alert actually has —
+-- it has no padding option, whatever the card uses.
+local function alertStyle()
+  local c = (themeStyle and themeStyle.colors) or {}
+  local style = {
+    fillColor   = rgb(c.background, "#1a1b26"),
+    strokeColor = rgb(c.foreground, "#a9b1d6"),
+    textColor   = rgb(c.foreground, "#a9b1d6"),
+    strokeWidth = 1,
+    radius      = 0,
+    textSize    = 16,
+  }
+  -- Only set when known: hs.alert wants a real family name, and an empty
+  -- string renders nothing at all.
+  if themeStyle and type(themeStyle.font) == "string" and themeStyle.font ~= "" then
+    style.textFont = themeStyle.font
+  end
+  return style
+end
+
 local menuWV = nil
 local function hideMenu()
   if menuWV then menuWV:delete(); menuWV = nil end
@@ -124,7 +164,7 @@ local function onMessage(message)
       -- channel is free — `slack --copy` uses it, since a clipboard copy has
       -- no other way to confirm it happened.
       local msg = (stdout or ""):gsub("%s+$", "")
-      if msg ~= "" then hs.alert.show(msg) end
+      if msg ~= "" then hs.alert.show(msg, alertStyle()) end
     end)
   elseif b.action == "previews" then
     local wv = menuWV
@@ -189,6 +229,13 @@ local function openMenu()
   -- the tag early and corrupt the page. < is valid JSON and parses back to
   -- "<" in JS, so the data is unchanged.
   local json = run({ "menu-data" }):gsub("<", "\\u003c")
+  -- Same payload the page is built from, kept for the alert's styling. pcall
+  -- because a decode failure must not stop the menu opening — the alert simply
+  -- falls back to the built-in colours.
+  local ok, data = pcall(hs.json.decode, json)
+  if ok and type(data) == "table" then
+    themeStyle = { colors = data.colors, font = data.font and data.font.current }
+  end
   local html = "<script>window.OMAMAC = " .. json .. ";</script>\n" .. f:read("*a")
   f:close()
 

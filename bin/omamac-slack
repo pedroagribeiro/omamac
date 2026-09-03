@@ -61,7 +61,7 @@ if [ "${1:-}" = "--copy" ]; then
   # stdout as an alert, which is the only feedback a clipboard copy can give
   # from a menu that closes as it runs. Every log_* goes to stderr, so this
   # channel is otherwise unused by the commands the menu applies.
-  printf 'Slack theme for %s copied — paste it into any Slack message\n' "$theme"
+  printf 'Slack theme copied\n'
 else
   printf '%s\n' "$THEME_STRING"
 fi

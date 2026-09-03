@@ -883,4 +883,109 @@ LUAEOF
     "the watcher must call bg --reapply, which is a no-op unless the wallpaper actually drifted"
 }
 
+# The confirmation banner is styled from the ACTIVE THEME, so it matches the
+# menu card instead of appearing in Hammerspoon's default black box. The
+# colours come from the same menu-data the page is built with, cached on open.
+test_confirmation_alert_is_styled_from_the_current_theme() {
+  local harness="$TMPDIR_TEST/alert_style_harness.lua"
+  cat > "$harness" <<'LUAEOF'
+package.loaded["hs.ipc"] = {}
+
+local alerts = {}
+
+local fakeWebview = {}
+fakeWebview.__index = fakeWebview
+function fakeWebview:windowStyle() return self end
+function fakeWebview:allowTextEntry() return self end
+function fakeWebview:transparent() return self end
+function fakeWebview:level() return self end
+function fakeWebview:deleteOnClose() return self end
+function fakeWebview:html() return self end
+function fakeWebview:show() return self end
+function fakeWebview:bringToFront() return self end
+function fakeWebview:hswindow() return nil end
+function fakeWebview:delete() end
+function fakeWebview:evaluateJavaScript(js) end
+
+local capturedCallback = nil
+
+hs = {
+  ipc = {},
+  fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
+  json = {
+    encode = function(t) return "{}" end,
+    -- The host decodes the menu-data it already fetched; hand it a payload
+    -- with known colours and font.
+    decode = function(str)
+      return {
+        colors = { background = "#102030", foreground = "#a0b0c0", accent = "#7aa2f7" },
+        font = { current = "Test Mono" },
+      }
+    end,
+  },
+  base64 = { encode = function(b) return "B64" end },
+  execute = function(cmd) return '{"colors":{}}' end,
+  hotkey = { bind = function() end },
+  screen = {
+    mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
+    watcher = { new = function(fn) return { start = function(self) return self end } end },
+  },
+  webview = {
+    usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
+    new = function(frame, opts, ucc) return setmetatable({}, fakeWebview) end,
+  },
+  drawing = { windowLevels = { modalPanel = 1 } },
+  alert = { show = function(msg, style) table.insert(alerts, { msg = msg, style = style }) end },
+  timer = { doAfter = function(d, fn) return { stop = function() end } end },
+  task = {
+    new = function(path, doneCb, streamCb, args)
+      -- An applied command that reports on stdout, as `slack --copy` does.
+      return { start = function() doneCb(0, "Slack theme copied\n", "") end }
+    end,
+  },
+}
+
+local ok, err = pcall(dofile, os.getenv("HAMMERSPOON_HOST"))
+if not ok then error("failed to load host under stubs: " .. tostring(err)) end
+
+OmamacMenu.open()                                     -- caches the theme style
+capturedCallback({ body = { action = "apply", cmd = "slack", arg = "--copy" } })
+
+local a = alerts[1]
+io.write("alerts=" .. tostring(#alerts) .. "\n")
+io.write("msg=" .. tostring(a and a.msg) .. "\n")
+io.write("has_style=" .. tostring(a ~= nil and a.style ~= nil) .. "\n")
+if a and a.style then
+  local s = a.style
+  -- #102030 -> red 0x10/255
+  io.write(string.format("fill_r=%.4f\n", s.fillColor.red))
+  io.write(string.format("text_r=%.4f\n", s.textColor.red))
+  io.write("stroke_w=" .. tostring(s.strokeWidth) .. "\n")
+  io.write("radius=" .. tostring(s.radius) .. "\n")
+  io.write("font=" .. tostring(s.textFont) .. "\n")
+end
+LUAEOF
+
+  local out rc
+  out=$(OMAMAC_DIR="$OMAMAC_ROOT" HAMMERSPOON_HOST="$HOST" lua_run "$harness" 2>&1); rc=$?
+  if [ "$rc" -eq 127 ]; then
+    fail "no executing Lua interpreter available — cannot verify the alert style"
+    return
+  fi
+  assert_eq 0 "$rc" "alert-style harness must run cleanly, got: $out"
+  [ "$rc" -eq 0 ] || return
+
+  assert_contains "$out" "alerts=1" "an applied command's stdout must surface exactly once"
+  assert_contains "$out" "msg=Slack theme copied"
+  assert_contains "$out" "has_style=true" \
+    "the alert must be styled, not left in Hammerspoon's default black box"
+  # 0x10/255 = 0.0627, 0xa0/255 = 0.6275 — the theme's background and foreground.
+  assert_contains "$out" "fill_r=0.0627" "the banner must be filled with the theme background"
+  assert_contains "$out" "text_r=0.6275" "the text must be the theme foreground"
+  # Matches the card: 1px border, square corners, the theme's own font.
+  assert_contains "$out" "stroke_w=1"
+  assert_contains "$out" "radius=0"
+  assert_contains "$out" "font=Test Mono"
+}
+
 run_tests
