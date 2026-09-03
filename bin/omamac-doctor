@@ -81,6 +81,16 @@ if [ -n "$want_font" ]; then
     fail ghostty "font-family in omamac.conf is not ${want_font}"
   fi
 fi
+want_opacity=$(omamac_state_get opacity)
+if [ -n "$want_opacity" ]; then
+  # Ghostty takes a 0..1 float; omamac records a percentage.
+  want_dec=$(awk -v p="$want_opacity" 'BEGIN { printf "%.2f", p / 100 }')
+  if grep -qF "background-opacity = ${want_dec}" "$conf" 2>/dev/null; then
+    pass ghostty "background-opacity is ${want_opacity}%"
+  else
+    fail ghostty "background-opacity in omamac.conf is not ${want_opacity}% (${want_dec})"
+  fi
+fi
 want_size=$(omamac_state_get font.size)
 if [ -n "$want_size" ]; then
   if grep -qF "font-size = ${want_size}" "$conf" 2>/dev/null; then

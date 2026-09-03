@@ -23,7 +23,7 @@ release tag.
 
 | Target | What omamac writes | Takes effect |
 | --- | --- | --- |
-| **Ghostty** | `~/.config/ghostty/themes/omamac`, `omamac.conf` (colours, font family, font size) | live — running terminals reload |
+| **Ghostty** | `~/.config/ghostty/themes/omamac`, `omamac.conf` (colours, font family, font size, background opacity) | live — running terminals reload |
 | **Neovim** | `~/.local/state/omamac/current/omamac.lua` | live — pushed to running instances over their sockets |
 | **Claude Code** | `~/.claude/themes/omamac.json` | live — Claude Code watches the directory |
 | **delta** (git's pager) | `~/.config/git/omamac.ini` | next git command |
@@ -176,6 +176,7 @@ In the menu: type to filter, <kbd>↑</kbd>/<kbd>↓</kbd> or
 omamac theme      [name|--list|--current]
 omamac font       [name|--list|--current]
 omamac font-size  [points|--list|--current]
+omamac opacity    [percent|--list|--current]
 omamac bg         [file|--next|--list|--current]
 omamac doctor
 omamac menu-data
@@ -192,6 +193,22 @@ useless for code. Override the pattern to widen it:
 
 ```bash
 OMAMAC_FONT_FILTER='.' omamac font --list          # everything available
+```
+
+### Transparency
+
+`omamac opacity 85` makes the terminal background 85% opaque; the menu offers
+50–100% under **Opacity**. Like the font family and size, it is a preference
+rather than a theme property, so it survives theme switches — Omarchy has no
+equivalent (its own "Transparency" entry toggles the Quickshell bar, not the
+terminal), so this is omamac's own.
+
+Transparency alone can be hard to read. Ghostty's `background-blur` pairs well
+with it and omamac does not touch that, so set it once in your own config:
+
+```
+background-blur = true
+background-blur-radius = 20
 ```
 
 ## omamac doctor

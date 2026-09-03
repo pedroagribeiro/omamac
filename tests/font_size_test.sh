@@ -85,7 +85,7 @@ test_size_survives_a_theme_switch() {
 test_out_of_range_and_non_numeric_are_refused() {
   setup_size_env
   local out rc
-  for bad in 9 25 0 -3 abc 14.5 ""; do
+  for bad in 9 25 0 -3 abc 14.5; do
     out=$("$OMAMAC_BIN" font-size "$bad" 2>&1); rc=$?
     [ "$rc" -eq 1 ] || fail "font-size '$bad' should have been refused, exited $rc"
   done
@@ -116,6 +116,20 @@ test_menu_data_exposes_the_size_level() {
   assert_eq 15 "$(printf '%s' "$json" | jq '.fontSize.options | length')"
   # The colours block must have survived sharing a jq variable namespace.
   assert_contains "$(printf '%s' "$json" | jq -r '.colors.selection_background')" "#"
+}
+
+# `sed` on a nonexistent file fails, and under `set -o pipefail` that took the
+# whole command's exit status with it — so this returned 1 on any machine with
+# no Ghostty config at all. It also made the "empty argument" case above look
+# like validation when it was really this failure.
+test_current_succeeds_when_there_is_no_ghostty_config() {
+  setup_size_env
+  rm -f "$OMAMAC_CONFIG_ROOT/ghostty/config"
+  rm -f "$OMAMAC_STATE/font.size"
+  local out rc
+  out=$("$OMAMAC_BIN" font-size --current 2>&1); rc=$?
+  assert_eq 0 "$rc" "nothing declared anywhere is a valid state, not an error"
+  assert_eq "" "$out"
 }
 
 run_tests

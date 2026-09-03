@@ -171,14 +171,16 @@ switch (scenario) {
     break;
   case 'bg-render-thrice':
     fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Background
+    fireKey('ArrowDown'); // root: Font -> Opacity
+    fireKey('ArrowDown'); // root: Opacity -> Background
     fireKey('Enter');     // enter Background — first render() call
     fireKey('ArrowDown'); // second render() call, no thumbs supplied meanwhile
     fireKey('ArrowDown'); // third render() call, ditto
     break;
   case 'bg-select-apply':
     fireKey('ArrowDown');  // root: Theme -> Font
-    fireKey('ArrowDown');  // root: Font -> Background
+    fireKey('ArrowDown');  // root: Font -> Opacity
+    fireKey('ArrowDown');  // root: Opacity -> Background
     fireKey('Enter');      // enter Background (coverflow), sel resets to 0
     fireKey('ArrowRight'); // move selection to the second item, coverflow-style
     fireKey('Enter');      // apply the now-selected (second) item
@@ -190,6 +192,16 @@ switch (scenario) {
     break;
   case 'root-report':
     break;              // report the root level exactly as first rendered
+  case 'opacity-select-apply':
+    fireKey('ArrowDown'); // root: Theme -> Font
+    fireKey('ArrowDown'); // root: Font -> Opacity
+    fireKey('Enter');     // enter Opacity, landing on the current value
+    fireKey('ArrowDown'); // one step down the list
+    fireKey('Enter');     // apply it
+    break;
+  case 'opacity-open-and-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('Enter');
+    break;
   case 'font-menu-report':
     fireKey('ArrowDown'); // root: Theme -> Font
     fireKey('Enter');     // enter Font — a submenu of Family and Size
@@ -245,7 +257,8 @@ switch (scenario) {
     break;
   case 'bg-unavailable-preview':
     fireKey('ArrowDown'); // root: Theme -> Font
-    fireKey('ArrowDown'); // root: Font -> Background
+    fireKey('ArrowDown'); // root: Font -> Opacity
+    fireKey('ArrowDown'); // root: Opacity -> Background
     fireKey('Enter');     // enter Background — one bulk request for the level
     // The host reporting that this item has no readable thumbnail. It must
     // not be cached (an empty src renders as a broken image) and it must not
@@ -272,7 +285,7 @@ function listReport() {
 }
 
 if (['font-open-and-report', 'root-report', 'size-open-and-report',
-     'font-menu-report', 'size-then-escape'].includes(scenario)) {
+     'font-menu-report', 'size-then-escape', 'opacity-open-and-report'].includes(scenario)) {
   process.stdout.write(JSON.stringify({
     messages,
     list: listReport(),

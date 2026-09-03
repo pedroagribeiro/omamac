@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# omamac-opacity [percent|--list|--current]
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+CONFIG_ROOT="${OMAMAC_CONFIG_ROOT:-$HOME/.config}"
+
+# Percentages, not Ghostty's 0..1 float. Ghostty takes background-opacity as a
+# decimal, but a picker listing "0.85" reads worse than "85", and every other
+# omamac level shows the number it is actually talking about.
+#
+# There is no upstream counterpart: Omarchy's ghostty template sets colours
+# only, and its "Transparency" menu entry toggles the Quickshell bar, not the
+# terminal. Transparency is a user preference here, not a theme property — it
+# lives in state and survives every theme switch, like the font family and size.
+MIN=50
+MAX=100
+STEP=5
+
+opacity_list() { seq "$MIN" "$STEP" "$MAX"; }
+
+# Percent -> the decimal Ghostty wants. 90 -> 0.90, 100 -> 1.00.
+as_decimal() { awk -v p="$1" 'BEGIN { printf "%.2f", p / 100 }'; }
+
+# The opacity in effect. Once omamac has been asked for one, that is the
+# answer. Before that, read the user's own Ghostty config. With nothing
+# declared anywhere the answer is 100, because that is Ghostty's documented
+# default — reporting nothing would leave the picker unable to mark a row.
+opacity_current() {
+  local v dec config
+  v=$(omamac_state_get opacity)
+  if [ -n "$v" ]; then printf '%s\n' "$v"; return 0; fi
+  local config="${CONFIG_ROOT}/ghostty/config"
+  # A missing config is not an error; see the same guard in omamac-font-size,
+  # where `sed` failing under `pipefail` made --current exit non-zero.
+  [ -f "$config" ] || { printf '100\n'; return 0; }
+  # Last wins in Ghostty's config, hence tail -1.
+  dec=$(sed -n -E 's/^[[:space:]]*background-opacity[[:space:]]*=[[:space:]]*([0-9.]+).*/\1/p' \
+    "$config" 2>/dev/null | tail -1)
+  if [ -n "$dec" ]; then
+    awk -v d="$dec" 'BEGIN { printf "%d", d * 100 + 0.5 }'
+    printf '\n'
+    return 0
+  fi
+  printf '100\n'
+}
+
+opacity_set() {
+  local pct="$1" theme prev
+  case "$pct" in
+    ''|*[!0-9]*) log_error "opacity must be a whole percentage: ${pct}"; return 1 ;;
+  esac
+  if [ "$pct" -lt "$MIN" ] || [ "$pct" -gt "$MAX" ]; then
+    log_error "opacity must be between ${MIN} and ${MAX}: ${pct}"
+    return 1
+  fi
+  # Speculative write, same shape as omamac-font and omamac-font-size: the
+  # re-render reads the value back out of state, so it has to be written first
+  # — and rolled back if the render fails, or --current would report an
+  # opacity that was never applied.
+  prev=$(omamac_state_get opacity)
+  omamac_state_set opacity "$pct"
+  theme=$(omamac_state_get theme.name)
+  if [ -n "$theme" ]; then
+    if ! "${OMAMAC_DIR}/bin/omamac-theme" "$theme"; then
+      if [ -n "$prev" ]; then omamac_state_set opacity "$prev"; else omamac_state_clear opacity; fi
+      log_error "could not apply opacity ${pct}%; reverted to ${prev:-default}"
+      return 1
+    fi
+  fi
+  log_info "Opacity set to ${pct}%."
+}
+
+case "${1:-}" in
+  --list)    opacity_list ;;
+  --current) opacity_current ;;
+  --decimal) as_decimal "${2:-100}" ;;   # used by render/ghostty
+  "")        opacity_current ;;
+  *)         opacity_set "$1" ;;
+esac

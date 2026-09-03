@@ -303,7 +303,13 @@
   // is a choice rather than a port. It was picked by parsing the Nerd Font's
   // cmap rather than assumed present: it lives in the same Font Awesome block
   // as the Background glyph, which already renders here.
-  const ROOT_ICONS = { Theme: "\u{f0e0c}", Font: "\u{e659}", Background: "\u{f03e}" };
+  // Opacity has no upstream counterpart — Omarchy's ghostty template sets
+  // colours only, and its "Transparency" entry toggles the Quickshell bar, not
+  // the terminal. U+F042 (fa-adjust, a half-filled circle) was chosen here and
+  // verified present by parsing the Nerd Font's cmap, like the Size glyph.
+  const ROOT_ICONS = {
+    Theme: "\u{f0e0c}", Font: "\u{e659}", Opacity: "\u{f042}", Background: "\u{f03e}",
+  };
   // Inside Font. Family reuses the Font glyph; Size is U+F034, fa-text-height.
   const FONT_MENU_ICONS = { Family: "\u{e659}", Size: "\u{f034}" };
 
@@ -385,9 +391,9 @@
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Font", "Background"],
+      items: () => ["Theme", "Font", "Opacity", "Background"],
       icon: (name) => ROOT_ICONS[name] || "",
-      into: { Theme: "theme", Font: "font", Background: "bg" },
+      into: { Theme: "theme", Font: "font", Opacity: "opacity", Background: "bg" },
     },
     theme: {
       crumb: "Theme", cmd: "theme", picker: "theme", labels: true, parent: "root",
@@ -422,6 +428,24 @@
       items: () => DATA.fontSize?.options || [],
       icon: (name) =>
         name === String(DATA.fontSize?.current || "") ? CURRENT_MARK : FONT_MENU_ICONS.Size,
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
+    },
+    // Terminal transparency: a user preference, not a theme property, so it
+    // survives theme switches exactly as the font family and size do. Shown as
+    // percentages because that is what the picker should say — Ghostty's own
+    // 0..1 float is a rendering detail.
+    opacity: {
+      crumb: "Opacity", cmd: "opacity", parent: "root",
+      argOf: (name) => name.replace(/%$/, ""),
+      // The displayed form, because `current` is matched against the ITEMS to
+      // decide which row to open on — and those carry the % suffix.
+      current: () => {
+        const c = String(DATA.opacity?.current || "");
+        return c ? c + "%" : "";
+      },
+      items: () => (DATA.opacity?.options || []).map((v) => String(v) + "%"),
+      icon: (name) =>
+        name === String(DATA.opacity?.current || "") + "%" ? CURRENT_MARK : ROOT_ICONS.Opacity,
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
     bg: {
@@ -647,7 +671,10 @@
     if (into) {
       enterLevel(into[pick]);
     } else {
-      send({ action: "apply", cmd: LEVELS[level].cmd, arg: pick });
+      // Levels may display a value differently from how the CLI takes it —
+      // Opacity shows "85%" but `omamac opacity` wants 85.
+      const strip = LEVELS[level].argOf;
+      send({ action: "apply", cmd: LEVELS[level].cmd, arg: strip ? strip(pick) : pick });
     }
   }
 

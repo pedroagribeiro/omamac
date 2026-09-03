@@ -332,8 +332,8 @@ test_root_rows_keep_their_own_icons() {
   # from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  assert_eq '["\udb83\ude0c","\ue659","\uf03e"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
-    "root must keep the Theme/Font/Background glyphs from omarchy-menu.jsonc"
+  assert_eq '["\udb83\ude0c","\ue659","\uf042","\uf03e"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root must keep its four glyphs"
 }
 
 # The Font menu is WIDER than every other card. Menu.qml:111 special-cases
@@ -523,6 +523,33 @@ test_escape_walks_up_one_level_and_keeps_its_place() {
   assert_eq "Size" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')"
   # And it must not have closed the menu.
   assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "close")] | length')"
+}
+
+# Opacity is shown as a percentage but the CLI takes a bare integer, so the
+# level has to strip the suffix on the way out. Sending "85%" would be refused
+# by omamac-opacity as non-numeric, and the menu would look like it did nothing.
+test_opacity_applies_a_bare_number_not_the_displayed_percentage() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"90","options":["85","90","95","100"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "opacity-select-apply")
+  # Opens on 90 (index 1), ArrowDown moves to 95.
+  assert_eq '{"action":"apply","cmd":"opacity","arg":"95"}' "$(printf '%s' "$out" | jq -c '.[-1]')"
+}
+
+test_opacity_level_shows_percentages_and_marks_the_current_one() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"90","options":["85","90","95","100"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "opacity-open-and-report")
+  assert_eq '["85%","90%","95%","100%"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
+  assert_eq "90%" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')" \
+    "the level must open on the opacity in effect"
+  assert_eq '"\u2713"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "90%") | .icon')"
 }
 
 run_tests

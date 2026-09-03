@@ -27,9 +27,15 @@ size_current() {
   local v
   v=$(omamac_state_get font.size)
   if [ -n "$v" ]; then printf '%s\n' "$v"; return 0; fi
+  # A missing config is not an error — "no size chosen anywhere" is a valid
+  # answer. Without this guard `sed` on a nonexistent file fails and, under
+  # `set -o pipefail`, takes the whole command's exit status with it: this
+  # returned 1 on any machine with no Ghostty config.
+  local config="${CONFIG_ROOT}/ghostty/config"
+  [ -f "$config" ] || return 0
   # Last wins in Ghostty's config, hence tail -1.
   sed -n -E 's/^[[:space:]]*font-size[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' \
-    "${CONFIG_ROOT}/ghostty/config" 2>/dev/null | tail -1
+    "$config" 2>/dev/null | tail -1
 }
 
 size_set() {

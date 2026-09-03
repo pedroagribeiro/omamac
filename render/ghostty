@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# render/ghostty <theme-dir> <config-root> [font-family] [font-size]
+# render/ghostty <theme-dir> <config-root> [font-family] [font-size] [opacity-percent]
 set -uo pipefail
 _here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "${_here}/lib/log.sh"
 source "${_here}/lib/colors.sh"
 
-theme_dir="$1"; root="$2"; font="${3:-}"; size="${4:-}"
+theme_dir="$1"; root="$2"; font="${3:-}"; size="${4:-}"; opacity="${5:-}"
 toml="${theme_dir}/colors.toml"
 [ -f "$toml" ] || { log_error "no colors.toml in ${theme_dir}"; exit 1; }
 
@@ -47,5 +47,15 @@ c() { omamac_hex_or_warn "$toml" "$1" "$(basename "$theme_dir")"; }
   # line is needed: this include is applied last, so it simply wins.)
   if [ -n "$size" ]; then
     printf 'font-size = %s\n' "$size"
+  fi
+  # Ghostty takes a 0..1 float; omamac talks in percentages everywhere else.
+  # Emitted only once an opacity has been chosen — unset, this file stays
+  # silent and whatever the user's own config declares keeps applying.
+  #
+  # 100% IS written rather than omitted: the point of choosing it is to win
+  # over a config that sets something lower, and omitting the line would
+  # silently leave the terminal transparent.
+  if [ -n "$opacity" ]; then
+    printf 'background-opacity = %s\n' "$(awk -v p="$opacity" 'BEGIN { printf "%.2f", p / 100 }')"
   fi
 } > "${root}/ghostty/omamac.conf"
