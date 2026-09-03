@@ -309,8 +309,11 @@
   // verified present by parsing the Nerd Font's cmap, like the Size glyph.
   const ROOT_ICONS = {
     Theme: "\u{f0e0c}", Font: "\u{e659}", Opacity: "\u{f042}", Background: "\u{f03e}",
-    Slack: "\u{f198}",
+    Applications: "\u{f00a}",
   };
+  // One per application under Applications. Adding an app here and to that
+  // level's `items`/`runs` is the whole of what it takes to add one.
+  const APP_ICONS = { Slack: "\u{f198}" };
   // Inside Font. Family reuses the Font glyph; Size is U+F034, fa-text-height.
   const FONT_MENU_ICONS = { Family: "\u{e659}", Size: "\u{f034}" };
 
@@ -392,16 +395,12 @@
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Font", "Opacity", "Background", "Slack"],
+      items: () => ["Theme", "Font", "Opacity", "Background", "Applications"],
       icon: (name) => ROOT_ICONS[name] || "",
-      into: { Theme: "theme", Font: "font", Opacity: "opacity", Background: "bg" },
-      // An entry that DOES something rather than opening a level. Slack cannot
-      // be themed directly — it has no theme deep link and its only local store
-      // is a locked Electron leveldb caching an account-level setting — so this
-      // copies the sidebar theme string for the current theme instead. Pasting
-      // it into any Slack message makes Slack render its own "Switch sidebar
-      // theme" button.
-      runs: { Slack: ["slack", "--copy"] },
+      into: {
+        Theme: "theme", Font: "font", Opacity: "opacity", Background: "bg",
+        Applications: "apps",
+      },
     },
     theme: {
       crumb: "Theme", cmd: "theme", picker: "theme", labels: true, parent: "root",
@@ -455,6 +454,19 @@
       icon: (name) =>
         name === String(DATA.opacity?.current || "") + "%" ? CURRENT_MARK : ROOT_ICONS.Opacity,
       rows: { height: 60, gap: 6, name: 19, icon: 20 },
+    },
+    // Applications omamac cannot drive directly. Each row copies that app's
+    // theme to the clipboard for a manual paste — see bin/omamac-slack for why
+    // Slack in particular has no automatic path. Rows here RUN a command
+    // rather than opening a level or applying a value.
+    //
+    // Adding an application is two lines: an entry in `items` and the command
+    // in `runs`, plus its glyph in APP_ICONS above.
+    apps: {
+      crumb: "Applications", parent: "root",
+      items: () => ["Slack"],
+      icon: (name) => APP_ICONS[name] || "",
+      runs: { Slack: ["slack", "--copy"] },
     },
     bg: {
       crumb: "Background", cmd: "bg", picker: "bg", labels: false, parent: "root",

@@ -204,8 +204,20 @@ switch (scenario) {
     break;
   case 'slack-copy':
     fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('ArrowDown'); fireKey('ArrowDown'); // root: ... -> Slack (last)
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // root: ... -> Applications
+    fireKey('Enter');                           // enter Applications
+    fireKey('Enter');                           // Slack (row 0)
+    break;
+  case 'apps-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // root: ... -> Applications
     fireKey('Enter');
+    break;
+  case 'apps-then-escape':
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter');   // into Applications
+    fireKey('Escape');  // back out — must land on root, ON Applications
     break;
   case 'font-menu-report':
     fireKey('ArrowDown'); // root: Theme -> Font
@@ -290,7 +302,8 @@ function listReport() {
 }
 
 if (['font-open-and-report', 'root-report', 'size-open-and-report',
-     'font-menu-report', 'size-then-escape', 'opacity-open-and-report'].includes(scenario)) {
+     'font-menu-report', 'size-then-escape', 'opacity-open-and-report',
+     'apps-report', 'apps-then-escape'].includes(scenario)) {
   process.stdout.write(JSON.stringify({
     messages,
     list: listReport(),

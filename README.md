@@ -215,9 +215,14 @@ background-blur-radius = 20
 ### Slack
 
 Slack cannot be themed directly, so omamac produces the string and stops
-there. **Slack** in the menu copies the sidebar theme for the current theme to
-your clipboard; paste it into any Slack message and Slack renders its own
-*"Switch sidebar theme"* button. `omamac slack` prints it instead.
+there. **Applications → Slack** in the menu copies the sidebar theme for the
+current theme to your clipboard; paste it into any Slack message and Slack
+renders its own *"Switch sidebar theme"* button. `omamac slack` prints it
+instead.
+
+**Applications** is where apps that cannot be driven automatically live, so
+more can be added beside Slack. Adding one is an entry in that level's `items`
+and its command in `runs` (`menu/menu.html`), plus a glyph in `APP_ICONS`.
 
 Why not automatic: Slack registers no theme deep link (only `slack://app`,
 `channel`, `doc`, `noop` and `open`), and its sole local store is an Electron

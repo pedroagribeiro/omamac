@@ -332,7 +332,7 @@ test_root_rows_keep_their_own_icons() {
   # from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  assert_eq '["\udb83\ude0c","\ue659","\uf042","\uf03e","\uf198"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+  assert_eq '["\udb83\ude0c","\ue659","\uf042","\uf03e","\uf00a"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
     "root must keep its five glyphs"
 }
 
@@ -557,6 +557,36 @@ test_opacity_level_shows_percentages_and_marks_the_current_one() {
 # sidebar theme string, because Slack itself cannot be driven (no theme deep
 # link, and its only local store is a locked Electron leveldb caching an
 # account-level setting).
+# Applications groups the apps omamac cannot drive automatically, so more can
+# be added beside Slack without cluttering the root.
+test_applications_is_a_section_not_an_action() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"100","options":["100"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "apps-report")
+  assert_eq '["Slack"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
+  assert_eq '"\uf198"' "$(printf '%s' "$out" | jq -a -c '.list[] | select(.name == "Slack") | .icon')" \
+    "each application keeps its own glyph, not the section's"
+  # Opening the section must not run anything.
+  assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "apply")] | length')" \
+    "opening Applications must not apply anything"
+}
+
+test_escape_from_applications_returns_to_root_on_that_row() {
+  if ! command -v node >/dev/null 2>&1; then
+    fail "no JS engine available to drive menu.html — cannot verify the page"
+    return
+  fi
+  local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"fontSize":{"current":"16","options":["16"]},"opacity":{"current":"100","options":["100"]},"bg":{"current":"","options":[]},"colors":{}}'
+  local out; out=$(run_driver "$data" "apps-then-escape")
+  assert_eq "Applications" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')" \
+    "Escape must land back on the row that was drilled into"
+  assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "close")] | length')" \
+    "Escape from a section must not close the menu"
+}
+
 test_slack_row_runs_the_copy_instead_of_drilling_in() {
   if ! command -v node >/dev/null 2>&1; then
     fail "no JS engine available to drive menu.html — cannot verify the page"
