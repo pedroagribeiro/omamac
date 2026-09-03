@@ -49,6 +49,8 @@ EOF
   printf 'font-family = "Menlo"\nconfig-file = ?omamac.conf\n' > "$OMAMAC_CONFIG_ROOT/ghostty/config"
   mkdir -p "$OMAMAC_CONFIG_ROOT/btop"
   printf 'color_theme = "omamac"\n' > "$OMAMAC_CONFIG_ROOT/btop/btop.conf"
+  mkdir -p "$OMAMAC_CONFIG_ROOT/zed"
+  printf '{ "theme": "omamac" }\n' > "$OMAMAC_CONFIG_ROOT/zed/settings.json"
   mkdir -p "$OMAMAC_CLAUDE_DIR"
   printf '{ "theme": "custom:omamac" }\n' > "$OMAMAC_CLAUDE_DIR/settings.json"
   printf '[include]\n\tpath = %s/git/omamac.ini\n' "$OMAMAC_CONFIG_ROOT" > "$GIT_CONFIG_GLOBAL"
@@ -213,6 +215,20 @@ test_detects_a_wallpaper_macos_is_not_actually_showing() {
   setup_healthy
   printf '%s' "/somewhere/else.jpg" > "$OSA_STORE"
   assert_flags "bg.*showing a different wallpaper"
+}
+
+
+test_detects_zed_settings_not_selecting_the_theme() {
+  setup_healthy
+  printf '{ "theme": "One Dark" }\n' > "$OMAMAC_CONFIG_ROOT/zed/settings.json"
+  assert_flags "zed.*does not set"
+}
+
+test_detects_stale_zed_colours() {
+  setup_healthy
+  printf '{"themes":[{"name":"omamac","appearance":"dark","style":{"editor.background":"#000000"}}]}\n' \
+    > "$OMAMAC_CONFIG_ROOT/zed/themes/omamac.json"
+  assert_flags "zed.*stale"
 }
 
 run_tests

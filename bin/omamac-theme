@@ -117,17 +117,18 @@ theme_set() {
     log_info "Ghostty: applied ${name} (not running; applies on next launch)."
   fi
 
-  # nvim/btop/bat/delta/claude/macos write to distinct paths and don't depend on
+  # nvim/btop/bat/delta/zed/claude/macos write to distinct paths and don't depend on
   # each other or on Ghostty, so run them concurrently rather than paying for
-  # six renderers sequentially. theme_set must still not return until all
-  # six are done — tests assert on their output files right after the
+  # seven renderers sequentially. theme_set must still not return until all
+  # seven are done — tests assert on their output files right after the
   # command — so each is `wait`ed individually by its own pid: that is what
   # lets a failing renderer log its own specific warning instead of
-  # collapsing all six into one generic message.
+  # collapsing all seven into one generic message.
   "${OMAMAC_DIR}/render/nvim"   "$dir" "$OMAMAC_STATE" & pid_nvim=$!
   "${OMAMAC_DIR}/render/btop"   "$dir" "$CONFIG_ROOT"  & pid_btop=$!
   "${OMAMAC_DIR}/render/bat"    "$dir" "$CONFIG_ROOT"  & pid_bat=$!
   "${OMAMAC_DIR}/render/delta"  "$dir" "$CONFIG_ROOT"  & pid_delta=$!
+  "${OMAMAC_DIR}/render/zed"    "$dir" "$CONFIG_ROOT"  & pid_zed=$!
   "${OMAMAC_DIR}/render/claude" "$dir" "$CLAUDE_DIR"   & pid_claude=$!
   "${OMAMAC_DIR}/render/macos"  "$dir"                 & pid_macos=$!
 
@@ -135,6 +136,7 @@ theme_set() {
   wait "$pid_btop"   || log_warn "btop render failed"
   wait "$pid_bat"    || log_warn "bat render failed"
   wait "$pid_delta"  || log_warn "delta render failed"
+  wait "$pid_zed"    || log_warn "zed render failed"
   wait "$pid_claude" || log_warn "claude render failed"
   wait "$pid_macos"  || log_warn "could not set system appearance"
 

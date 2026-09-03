@@ -163,6 +163,33 @@ else
   fail delta "git resolves delta.light = '${resolved_light:-unset}', but ${theme} is ${MODE}"
 fi
 
+# ── zed ────────────────────────────────────────────────────────────────────
+zed_theme="${CONFIG_ROOT}/zed/themes/omamac.json"
+if [ -f "$zed_theme" ] && command -v jq >/dev/null 2>&1 && jq -e . "$zed_theme" >/dev/null 2>&1; then
+  zed_appearance=$(jq -r '.themes[0].appearance' "$zed_theme")
+  if [ "$zed_appearance" = "$MODE" ]; then
+    pass zed "theme is valid JSON, appearance ${zed_appearance}"
+  else
+    fail zed "theme appearance is '${zed_appearance}' but ${theme} is ${MODE}"
+  fi
+  if jq -e --arg bg "#${BG}" '.themes[0].style."editor.background" == $bg' "$zed_theme" >/dev/null 2>&1; then
+    pass zed "colours match ${theme}"
+  else
+    fail zed "theme colours are stale (editor.background is not #${BG})"
+  fi
+elif [ ! -f "$zed_theme" ]; then
+  fail zed "themes/omamac.json missing"
+else
+  fail zed "themes/omamac.json is not valid JSON"
+fi
+# The pointer. Without it the theme is generated, correct, and unused. Zed's
+# settings are JSONC, so this is a substring check rather than a jq query.
+if grep -qs '"theme"[[:space:]]*:[[:space:]]*"omamac"' "${CONFIG_ROOT}/zed/settings.json"; then
+  pass zed "settings.json selects omamac"
+else
+  fail zed "settings.json does not set \"theme\": \"omamac\" — the generated theme is not being used"
+fi
+
 # ── claude ─────────────────────────────────────────────────────────────────
 claude_theme="${CLAUDE_DIR}/themes/omamac.json"
 if [ -f "$claude_theme" ] && command -v jq >/dev/null 2>&1 && jq -e . "$claude_theme" >/dev/null 2>&1; then

@@ -26,6 +26,7 @@ release tag.
 | **Ghostty** | `~/.config/ghostty/themes/omamac`, `omamac.conf` (colours, font family, font size, background opacity) | live — running terminals reload |
 | **Neovim** | `~/.local/state/omamac/current/omamac.lua` | live — pushed to running instances over their sockets |
 | **Claude Code** | `~/.claude/themes/omamac.json` | live — Claude Code watches the directory |
+| **Zed** | `~/.config/zed/themes/omamac.json` | live — Zed watches the directory |
 | **delta** (git's pager) | `~/.config/git/omamac.ini` | next git command |
 | **btop** | `~/.config/btop/themes/omamac.theme` | next launch |
 | **bat** | `~/.config/bat/themes/omamac.tmTheme` | next launch |
@@ -115,6 +116,16 @@ theme):
 [include]
   path = ~/.config/git/omamac.ini
 ```
+
+**Zed** — in `~/.config/zed/settings.json`:
+
+```json
+{ "theme": "omamac" }
+```
+
+The generated theme declares its own `appearance`, following the active theme,
+so there is no light/dark pair to switch between — use the plain string form
+rather than `{"mode": "system", …}`.
 
 **Claude Code** — in `~/.claude/settings.json`:
 

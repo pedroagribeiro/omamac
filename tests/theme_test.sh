@@ -301,4 +301,17 @@ tokyo-night" "$("$OMAMAC_BIN" theme --list)" \
     "only directories carrying a colors.toml may be offered as themes"
 }
 
+test_theme_switch_writes_the_zed_theme() {
+  setup_themes
+  "$OMAMAC_BIN" theme tokyo-night >/dev/null 2>&1
+  local out="$OMAMAC_CONFIG_ROOT/zed/themes/omamac.json"
+  [ -f "$out" ] || { fail "a theme switch did not write the Zed theme"; return; }
+  jq -e . "$out" >/dev/null 2>&1 || fail "the Zed theme is not valid JSON"
+  local bg
+  bg=$(sed -n -E 's/^[[:space:]]*background[[:space:]]*=[[:space:]]*"?#?([0-9A-Fa-f]{6})"?.*/\1/p' \
+    "$OMAMAC_THEMES_DIR/tokyo-night/colors.toml" | head -1 | tr 'A-F' 'a-f')
+  assert_eq "#$bg" "$(jq -r '.themes[0].style."editor.background"' "$out")" \
+    "the Zed theme must carry the theme that was actually applied"
+}
+
 run_tests
