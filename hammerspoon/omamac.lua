@@ -42,6 +42,13 @@ end
 -- value. This is that with room to spare, while still feeling instant.
 local PANEL_CLEAR_DELAY = 0.15
 
+-- Kept in a module-level local for the same reason the screen watcher below is:
+-- an hs.timer that nothing references is garbage collected and never fires.
+-- Observed exactly that — the panel closed, the picker never appeared, and
+-- nothing was logged anywhere, because the timer had been collected between
+-- being created and coming due.
+local captureTimer = nil
+
 local function shquote(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
 
 local function run(args)
@@ -253,17 +260,21 @@ local function onMessage(message)
       hs.alert.show("omamac: region picker unavailable", alertStyle())
       return
     end
-    -- The panel is a full-screen webview. Deleting it is not the same as it
-    -- being off screen — freeze too soon and the menu is baked into the
-    -- screenshot, which is exactly what happened before this wait existed.
-    -- Measured, not guessed: see tests/README or the capture notes.
-    hs.timer.doAfter(PANEL_CLEAR_DELAY, function()
+    -- Wait for the panel to actually leave the screen before the picker freezes
+    -- it — see PANEL_CLEAR_DELAY.
+    if captureTimer then captureTimer:stop() end
+    captureTimer = hs.timer.doAfter(PANEL_CLEAR_DELAY, function()
       local shot = (b.kind == "screenshot")
+      -- The selection is drawn in the theme's accent, so the picker looks like
+      -- the menu it came from. rgb()'s fallback is a HEX STRING, not a colour
+      -- table: it substitutes the fallback for the value and then indexes it as
+      -- a string, so a table there crashes on exactly the themes that have no
+      -- accent to read.
+      local stroke = rgb(themeStyle and themeStyle.colors and themeStyle.colors.accent, "#ffffff")
       Region.pick("smart",
         -- A screenshot is taken FROM the frozen screen, so the freeze outlives
         -- the pick; a recording must see live content, so it does not.
-        { keepFreeze = shot, stroke = rgb(themeStyle and themeStyle.colors and
-            themeStyle.colors.accent, { white = 1, alpha = 0.9 }) },
+        { keepFreeze = shot, stroke = stroke },
         function(geo, dropFreeze)
           if not geo then dropFreeze(); return end
           local argv = shot and { "capture", "--screenshot", "--region", geo }

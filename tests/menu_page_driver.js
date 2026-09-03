@@ -322,6 +322,11 @@ switch (scenario) {
     fireKey('ArrowDown'); fireKey('Enter');      // Capture
     fireKey('ArrowDown'); fireKey('Enter');      // Stop Recording (only while recording)
     break;
+  case 'capture-record-report':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('Enter');      // Capture
+    fireKey('ArrowDown'); fireKey('Enter');      // Record
+    break;
   case 'capture-record-silent':
   case 'capture-record-audio':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
@@ -364,7 +369,8 @@ if (['font-open-and-report', 'root-report', 'size-open-and-report',
      'ghostty-menu-report', 'size-then-escape', 'opacity-open-and-report',
      'apps-report', 'apps-then-escape', 'workspaces-report',
      'wsmonitor-report', 'wsmonitor-escape',
-     'capture-report', 'record-then-escape'].includes(scenario)) {
+     'capture-report', 'record-then-escape',
+     'capture-record-report'].includes(scenario)) {
   process.stdout.write(JSON.stringify({
     messages,
     list: listReport(),

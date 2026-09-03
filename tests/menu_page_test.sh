@@ -738,4 +738,20 @@ test_escape_from_record_returns_to_capture() {
     "Escape one level up must not close the menu"
 }
 
+# Menu.qml:111 widens exactly two menus to 520 and leaves every other card at
+# 300 — style.font and trigger.capture.screenrecord. The second one is this.
+# At 300 "With microphone audio" ellipsis away, which is what a card too narrow
+# for its own rows looks like.
+test_the_record_card_is_as_wide_as_omarchy_makes_it() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "capture-record-report")
+  assert_eq "520px" "$(printf '%s' "$out" | jq -r '.cardWidth')" \
+    "the screen-record card is one of the two upstream widens to 520"
+}
+
+test_the_capture_card_keeps_the_default_width() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "capture-report")
+  assert_eq "300px" "$(printf '%s' "$out" | jq -r '.cardWidth')" \
+    "only style.font and the record menu are widened"
+}
+
 run_tests

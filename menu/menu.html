@@ -486,6 +486,12 @@
       crumb: "Record", parent: "capture",
       items: () => ["With no audio", "With microphone audio"],
       icon: (name) => CAPTURE_ICONS[name] || "",
+      // The OTHER card Menu.qml:111 widens to 520 — upstream names
+      // `trigger.capture.screenrecord` alongside `style.font` and leaves every
+      // other menu at 300. Its own rows go up to "With desktop + microphone
+      // audio + webcam"; even the two here ellipsis away at 300, which is how
+      // this was noticed.
+      width: 520,
       sends: {
         "With no audio": { action: "capture", kind: "record", audio: false },
         "With microphone audio": { action: "capture", kind: "record", audio: true },
@@ -556,9 +562,9 @@
       icon: (name) => GHOSTTY_ICONS[name] || "",
       into: { Size: "fontsize", Opacity: "opacity", Padding: "padding", Blur: "blur" },
     },
-    // `width` follows Menu.qml:111, which gives style.font (and the
-    // screen-record menu, which omamac has no equivalent of) 520 and every
-    // other card 300. Family names are what need that room.
+    // `width` follows Menu.qml:111, which gives style.font and the
+    // screen-record menu 520 and every other card 300. Family names are what
+    // need that room here; see the `record` level for the other one.
     // A leaf list straight off the root, which is also upstream's shape:
     // omarchy-menu.jsonc gives style.font a `provider` rather than children.
     font: {
