@@ -10,7 +10,7 @@ appearance and wallpaper together — from a single theme definition.
 [![platform](https://img.shields.io/badge/platform-macOS-111111?style=flat-square&logo=apple&logoColor=white)](#requirements)
 [![themes](https://img.shields.io/badge/themes-22-1f6f5c?style=flat-square)](#the-themes)
 [![ported from](https://img.shields.io/badge/ported%20from-Omarchy%20v4.0.2-1f6f5c?style=flat-square)](#credits)
-[![tests](https://img.shields.io/badge/tests-291-1f6f5c?style=flat-square)](#development)
+[![tests](https://img.shields.io/badge/tests-338-1f6f5c?style=flat-square)](#development)
 [![license](https://img.shields.io/badge/license-MIT-1f6f5c?style=flat-square)](LICENSE)
 
 <img src="docs/images/menu-theme.jpg" alt="The theme picker: a coverflow of theme previews, centred on Osaka Jade" width="100%">
@@ -36,11 +36,11 @@ are all lifted from the upstream QML and shell sources at a pinned release tag.
 
 ## The menu
 
-Four things at the root. Type to filter, arrows to move, <kbd>Enter</kbd> to
+Five things at the root. Type to filter, arrows to move, <kbd>Enter</kbd> to
 apply, <kbd>Esc</kbd> to go back one level and then close.
 
 <div align="center">
-<img src="docs/images/menu-root.jpg" alt="The root menu: Theme, Font, Background, Applications" width="620">
+<img src="docs/images/menu-root.jpg" alt="The root menu: Theme, Font, Background, Applications, Capture" width="620">
 </div>
 
 ### Theme and Background
@@ -141,6 +141,68 @@ and `open`), and its sole local store is an Electron leveldb that is locked whil
 Slack runs, has no stable external API, and caches an **account-level** setting
 that syncs. So even a successful write would likely be overwritten, and a failed
 one would corrupt Slack rather than error.
+
+</details>
+
+### Capture
+
+Screenshots and screen recording, sharing one picker — the arrangement upstream
+has, where `omarchy-capture-region` serves both so selecting feels the same
+whichever you are doing.
+
+<table>
+<tr>
+<td width="45%"><img src="docs/images/menu-capture.jpg" alt="Capture: Screenshot, Record" width="100%"></td>
+<td width="55%"><img src="docs/images/menu-record.jpg" alt="Record: with no audio, with microphone audio" width="100%"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Capture</b> — a third row, <b>Stop Recording</b>, appears while recording</sub></td>
+<td align="center"><sub><b>Record</b> — the other card upstream widens to 520</sub></td>
+</tr>
+</table>
+
+Picking either freezes the screen and dims it. Drag to select, click to snap to
+the window or display under the cursor, <kbd>Esc</kbd> to cancel.
+
+<div align="center">
+<img src="docs/images/picker.jpg" alt="The region picker: a dimmed frozen screen with a selection punched out of it, showing its size" width="100%">
+</div>
+
+A screenshot is saved to `~/Pictures` **and** copied to the clipboard. A
+recording goes to `~/Movies` and runs until you pick **Stop Recording** — a row
+that only exists while something is recording, which is upstream's `when:` on
+that entry, answered here by `menu-data`.
+
+The freeze is not decoration. A screenshot is taken from the frozen image
+rather than the live screen, so what you framed is what you get, and the dim is
+torn down before the capture so it never lands in the file. That is upstream's
+arrangement exactly: slurp exits before grim runs, leaving hyprpicker's
+undimmed freeze standing.
+
+| Variable | Purpose |
+| --- | --- |
+| `OMAMAC_SCREENSHOT_DIR` | Where screenshots go. Default `~/Pictures`. |
+| `OMAMAC_SCREENRECORD_DIR` | Where recordings go. Default `~/Movies`. |
+
+<details>
+<summary>What is missing from Omarchy's Capture menu, and why</summary>
+
+- **Desktop audio.** `screencapture` records an *input* device only. Capturing
+  system output needs a virtual loopback device (BlackHole, Loopback), so
+  offering the row would produce silent recordings on a stock Mac. The
+  microphone works and is its own row.
+- **Webcam overlay**, which upstream composites with mpv.
+- **Text and QR capture**, which need OCR and a QR decoder.
+
+And one divergence: upstream writes `.mp4`. `screencapture` writes a QuickTime
+container whatever the extension — verified, major brand `qt  ` — so omamac
+writes `.mov` rather than misnaming the file.
+
+Two things worth knowing if you extend this. `screencapture -v` creates nothing
+at all until it stops, so "has the file appeared" cannot tell you a recording
+started; omamac waits a moment and checks the process is still alive, since a
+rejected region exits in about 0.12s. And it finalises on **SIGINT**
+specifically — anything else kills it mid-write and leaves an unplayable file.
 
 </details>
 
@@ -394,6 +456,7 @@ omamac padding    [points|--list|--current]
 omamac blur       [radius|--list|--current]
 omamac bg         [name|--next|--reapply|--list|--current]
 omamac aerospace  [gaps|--workspace <n>=<monitor>|--workspaces|--monitors|--render|--list|--current]
+omamac capture    --screenshot|--record [--region "X,Y WxH"] [--audio] | --stop | --status
 omamac slack      [--copy]
 omamac doctor
 omamac menu-data
@@ -445,6 +508,7 @@ through your real git config rather than reading the generated file.
 | `OMAMAC_CLAUDE_DIR` / `CLAUDE_CONFIG_DIR` | Claude Code's config directory. Default `~/.claude`. |
 | `OMAMAC_STATE` / `OMAMAC_CACHE` | State and cache roots. Default `~/.local/state/omamac`, `~/.cache/omamac`. |
 | `OMAMAC_THEMES_DIR` | Where themes are read from. Default the checkout's `themes/`. |
+| `OMAMAC_SCREENSHOT_DIR` / `OMAMAC_SCREENRECORD_DIR` | Where captures go. Default `~/Pictures`, `~/Movies`. |
 | `OMAMAC_DIR` | Install root. Resolved automatically; see below. |
 
 The remaining `OMAMAC_*` variables (`OMAMAC_PS`, `OMAMAC_KILL`,
@@ -474,6 +538,7 @@ render/                 one script per target, all driven from colors.toml
 themes/<name>/          vendored colors.toml + backgrounds.index
 menu/menu.html          the menu, rendered in a WKWebView
 hammerspoon/omamac.lua  hotkeys, the webview host, message plumbing
+hammerspoon/region.lua  the region picker, upstream's omarchy-capture-region
 ```
 
 A theme switch renders Ghostty first and reloads it immediately — it's the thing
@@ -527,7 +592,7 @@ or `runs` (a single action), and a glyph in `APP_ICONS` — all in
 ./tests/run
 ```
 
-291 tests, plain bash — no framework — needing `node`, a Lua front-end, `jq` and
+338 tests, plain bash — no framework — needing `node`, a Lua front-end, `jq` and
 macOS's `plutil`. There's deliberately no flake `checks` output: none of those
 exist in a Nix sandbox, and a check that can never pass is worse than none.
 
