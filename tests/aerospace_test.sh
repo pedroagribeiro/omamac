@@ -18,6 +18,10 @@ start-at-login = false
 on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
 accordion-padding = 30
 
+# Values marked `# omamac:gaps` below are rewritten by omamac. This sentence
+# mentions the marker in PROSE, exactly as the real template does — anything
+# counting marked lines has to count assignments, not mentions.
+
 [gaps]
   inner.horizontal = 10  # omamac:gaps
   inner.vertical =   10  # omamac:gaps
@@ -154,6 +158,23 @@ test_no_partial_file_is_left_behind() {
   assert_eq "" "$stray"
   grep -q 'mv -f "\$tmp" "\$OUT"' "$OMAMAC_ROOT/bin/omamac-aerospace" \
     || fail "the config must be renamed into place, not written in situ"
+}
+
+# A template that documents its own convention says `# omamac:gaps` in a
+# comment. The renderer is safe by construction (its patterns are anchored on
+# ^[^#]*, so a comment line cannot match), but anything COUNTING marked lines
+# has to count assignments rather than mentions — doctor read the prose as a
+# seventh gap that never matched, and reported a correctly rendered config as
+# broken.
+test_a_prose_mention_of_the_marker_is_not_treated_as_a_value() {
+  setup_aero
+  "$OMAMAC_BIN" aerospace 6 >/dev/null 2>&1
+  # The comment survives untouched...
+  assert_contains "$(cat "$OUT")" "mentions the marker in PROSE"
+  # ...and exactly the six assignments carry the new value.
+  assert_eq 6 "$(grep -cE '=[[:space:]]*6[[:space:]]*# omamac:gaps' "$OUT")"
+  assert_eq 6 "$(grep -cE '=[[:space:]]*[0-9]+[[:space:]]*# omamac:gaps' "$OUT")" \
+    "only assignments count as marked values"
 }
 
 run_tests

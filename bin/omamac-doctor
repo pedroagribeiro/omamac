@@ -242,8 +242,12 @@ else
   want_gaps=$("${OMAMAC_DIR}/bin/omamac-aerospace" --current)
   if [ -z "$want_gaps" ]; then
     skip aero "no gap size recorded"
-  elif [ "$(grep -c "= *${want_gaps} *# omamac:gaps" "$aero_out")" -gt 0 ] &&
-       [ "$(grep -c '# omamac:gaps' "$aero_out")" -eq "$(grep -c "= *${want_gaps} *# omamac:gaps" "$aero_out")" ]; then
+  # Counts ASSIGNMENTS carrying the marker, not every line mentioning it: a
+  # template that explains its own convention in a comment says `# omamac:gaps`
+  # in prose, and a naive count reads that as a seventh gap that never matches.
+  elif aero_marked=$(grep -cE '=[[:space:]]*[0-9]+[[:space:]]*# omamac:gaps' "$aero_out") &&
+       aero_ok=$(grep -cE "=[[:space:]]*${want_gaps}[[:space:]]*# omamac:gaps" "$aero_out") &&
+       [ "$aero_marked" -gt 0 ] && [ "$aero_marked" -eq "$aero_ok" ]; then
     pass aero "gaps are ${want_gaps}px on every marked value"
   else
     fail aero "the rendered aerospace.toml does not carry ${want_gaps}px — run: omamac aerospace --render"
