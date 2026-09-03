@@ -220,12 +220,13 @@ current theme to your clipboard; paste it into any Slack message and Slack
 renders its own *"Switch sidebar theme"* button. `omamac slack` prints it
 instead.
 
-**Applications** holds everything that belongs to a specific app: Ghostty's
-family, size and opacity together, and Slack's copy action. Theme and
-Background stay at the root, since they are properties of the desktop rather
-than of any one application. Adding an app is an entry in that level's `items`
-plus either `into` (it has settings of its own) or `runs` (a single action),
-and a glyph in `APP_ICONS` — all in `menu/menu.html`.
+**Applications** holds what belongs to one specific app: Ghostty's font size
+and opacity, and Slack's copy action. The root keeps what does not — the
+theme, the wallpaper, and the monospace font **family**, which is a
+system-wide choice that any app added later shares rather than picking its
+own. Adding an app is an entry in that level's `items` plus either `into` (it
+has settings of its own) or `runs` (a single action), and a glyph in
+`APP_ICONS` — all in `menu/menu.html`.
 
 Why not automatic: Slack registers no theme deep link (only `slack://app`,
 `channel`, `doc`, `noop` and `open`), and its sole local store is an Electron

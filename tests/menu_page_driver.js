@@ -162,8 +162,8 @@ function stripReport() {
 }
 
 switch (scenario) {
-  // Root is Theme, Background, Applications. Applications holds Ghostty
-  // (Family, Size, Opacity) and Slack.
+  // Root is Theme, Font, Background, Applications. Font goes straight to the
+  // family list; Applications holds Ghostty (Size, Opacity) and Slack.
   case 'enter-enter':
     fireKey('Enter');     // root -> Theme
     fireKey('Enter');     // apply the selected theme
@@ -174,19 +174,19 @@ switch (scenario) {
   case 'root-report':
     break;                // report the root level exactly as first rendered
   case 'bg-render-thrice':
-    fireKey('ArrowDown'); // root: Theme -> Background
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // root -> Background
     fireKey('Enter');     // enter Background — first render() call
     fireKey('ArrowDown'); // second render() call, no thumbs supplied meanwhile
     fireKey('ArrowDown'); // third render() call, ditto
     break;
   case 'bg-select-apply':
-    fireKey('ArrowDown'); // root: Theme -> Background
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // root -> Background
     fireKey('Enter');     // enter Background (coverflow), sel resets to 0
     fireKey('ArrowRight');// move selection to the second item, coverflow-style
     fireKey('Enter');     // apply the now-selected (second) item
     break;
   case 'bg-unavailable-preview':
-    fireKey('ArrowDown'); // root: Theme -> Background
+    fireKey('ArrowDown'); fireKey('ArrowDown'); // root -> Background
     fireKey('Enter');     // enter Background — one bulk request for the level
     // The host reporting that this item has no readable thumbnail. It must
     // not be cached (an empty src renders as a broken image) and it must not
@@ -222,60 +222,57 @@ switch (scenario) {
     // kind" apart from "pushes are being dropped".
     global.window.omamacSetPreview('nord', 'data:image/jpeg;base64,RIGHT', 'theme');
     break;
+  case 'font-open-and-report':
+    fireKey('ArrowDown');  // root: Theme -> Font
+    fireKey('Enter');      // straight into the family list
+    break;
   case 'apps-report':
-    fireKey('ArrowDown'); fireKey('ArrowDown'); // root -> Applications
-    fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter');      // root -> Applications
     break;
   case 'apps-then-escape':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('Enter');   // into Applications
     fireKey('Escape');  // back out — must land on root, ON Applications
     break;
   case 'ghostty-menu-report':
-    fireKey('ArrowDown'); fireKey('ArrowDown'); // root -> Applications
-    fireKey('Enter');                           // Applications
-    fireKey('Enter');                           // Ghostty (row 0)
-    break;
-  case 'font-open-and-report':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('Enter'); fireKey('Enter');         // Applications -> Ghostty
-    fireKey('Enter');                           // Family (row 0)
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter');      // Applications
+    fireKey('Enter');      // Ghostty (row 0)
     break;
   case 'size-open-and-report':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('Enter'); fireKey('Enter');
-    fireKey('ArrowDown');                       // Family -> Size
-    fireKey('Enter');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter'); fireKey('Enter');          // Applications -> Ghostty
+    fireKey('Enter');                            // Size (row 0)
     break;
   case 'size-select-apply':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('Enter'); fireKey('Enter');
-    fireKey('ArrowDown'); fireKey('Enter');     // enter Size, on the current
-    fireKey('ArrowDown'); fireKey('Enter');     // one size up, apply
+    fireKey('Enter');                            // enter Size, on the current
+    fireKey('ArrowDown'); fireKey('Enter');      // one size up, apply
     break;
   case 'size-then-escape':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('Enter'); fireKey('Enter');
-    fireKey('ArrowDown'); fireKey('Enter');     // into Size
-    fireKey('Escape');                          // back to Ghostty, ON Size
+    fireKey('Enter');                            // into Size
+    fireKey('Escape');                           // back to Ghostty, ON Size
     break;
   case 'opacity-open-and-report':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('Enter'); fireKey('Enter');
-    fireKey('ArrowDown'); fireKey('ArrowDown'); // Family -> Size -> Opacity
+    fireKey('ArrowDown');                        // Size -> Opacity
     fireKey('Enter');
     break;
   case 'opacity-select-apply':
-    fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('Enter'); fireKey('Enter');
-    fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('Enter');                           // enter Opacity, on the current
-    fireKey('ArrowDown'); fireKey('Enter');     // one step down, apply
+    fireKey('ArrowDown'); fireKey('Enter');      // enter Opacity, on the current
+    fireKey('ArrowDown'); fireKey('Enter');      // one step down, apply
     break;
   case 'slack-copy':
-    fireKey('ArrowDown'); fireKey('ArrowDown'); // root -> Applications
-    fireKey('Enter');                           // Applications
-    fireKey('ArrowDown');                       // Ghostty -> Slack
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('Enter');                            // Applications
+    fireKey('ArrowDown');                        // Ghostty -> Slack
     fireKey('Enter');
     break;
   default:

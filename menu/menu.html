@@ -308,14 +308,16 @@
   // the terminal. U+F042 (fa-adjust, a half-filled circle) was chosen here and
   // verified present by parsing the Nerd Font's cmap, like the Size glyph.
   const ROOT_ICONS = {
-    Theme: "\u{f0e0c}", Background: "\u{f03e}", Applications: "\u{f00a}",
+    Theme: "\u{f0e0c}", Font: "\u{e659}", Background: "\u{f03e}",
+    Applications: "\u{f00a}",
   };
   // One per application under Applications. Adding an app is an entry here, in
   // that level's `items`, and either `into` (it has settings of its own) or
   // `runs` (a single action).
   const APP_ICONS = { Ghostty: "\u{f120}", Slack: "\u{f198}" };
-  // Ghostty's own settings.
-  const GHOSTTY_ICONS = { Family: "\u{e659}", Size: "\u{f034}", Opacity: "\u{f042}" };
+  // Ghostty's own settings. The font FAMILY is not one of them — see the
+  // `font` level.
+  const GHOSTTY_ICONS = { Size: "\u{f034}", Opacity: "\u{f042}" };
   // Inside Font. Family reuses the Font glyph; Size is U+F034, fa-text-height.
   const FONT_MENU_ICONS = { Family: "\u{e659}", Size: "\u{f034}" };
 
@@ -396,19 +398,22 @@
   // one knob (style.bar -> Position -> Top/Bottom).
   // Every level names its `parent`, so Escape walks back up one step.
   //
-  // Theme and Background are properties of the desktop as a whole and stay at
-  // the root. Everything else belongs to a specific application, so it lives
-  // under Applications — Ghostty's font family, size and transparency
-  // together, rather than split between the root and a section.
+  // The root holds what is not specific to one application: the theme, the
+  // wallpaper, and the monospace font FAMILY — which is a system-wide choice
+  // (Omarchy models it that way too, `omarchy-font-set` setting the system
+  // font), so an editor added later shares it rather than choosing its own.
+  //
+  // What IS per-application lives under Applications: the point size, which
+  // every app sizes independently, and Ghostty's transparency.
   //
   // A level's rows do one of three things: open a submenu (`into`), run a
   // command outright (`runs`), or apply the value they name (`cmd`).
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Background", "Applications"],
+      items: () => ["Theme", "Font", "Background", "Applications"],
       icon: (name) => ROOT_ICONS[name] || "",
-      into: { Theme: "theme", Background: "bg", Applications: "apps" },
+      into: { Theme: "theme", Font: "font", Background: "bg", Applications: "apps" },
     },
     theme: {
       crumb: "Theme", cmd: "theme", picker: "theme", labels: true, parent: "root",
@@ -433,19 +438,21 @@
     },
     ghostty: {
       crumb: "Ghostty", parent: "apps",
-      items: () => ["Family", "Size", "Opacity"],
+      items: () => ["Size", "Opacity"],
       icon: (name) => GHOSTTY_ICONS[name] || "",
-      into: { Family: "fontfamily", Size: "fontsize", Opacity: "opacity" },
+      into: { Size: "fontsize", Opacity: "opacity" },
     },
     // `width` follows Menu.qml:111, which gives style.font (and the
     // screen-record menu, which omamac has no equivalent of) 520 and every
     // other card 300. Family names are what need that room.
-    fontfamily: {
-      crumb: "Family", cmd: "font", parent: "ghostty",
+    // A leaf list straight off the root, which is also upstream's shape:
+    // omarchy-menu.jsonc gives style.font a `provider` rather than children.
+    font: {
+      crumb: "Font", cmd: "font", parent: "root",
       current: () => DATA.font.current || "",
       items: () => DATA.font.options || [],
       icon: (name) =>
-        name === (DATA.font.current || "") ? CURRENT_MARK : GHOSTTY_ICONS.Family,
+        name === (DATA.font.current || "") ? CURRENT_MARK : ROOT_ICONS.Font,
       width: 520,
       // Deliberate deviation — see ROWS above.
       rows: { height: 60, gap: 6, name: 19, icon: 20 },

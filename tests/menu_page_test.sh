@@ -332,8 +332,8 @@ test_root_rows_keep_their_own_icons() {
   # from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  assert_eq '["\udb83\ude0c","\uf03e","\uf00a"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
-    "root keeps only what is not app-specific: Theme, Background, Applications"
+  assert_eq '["\udb83\ude0c","\ue659","\uf03e","\uf00a"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root keeps what is not app-specific: Theme, Font, Background, Applications"
 }
 
 # The Font menu is WIDER than every other card. Menu.qml:111 special-cases
@@ -487,9 +487,9 @@ test_size_enter_applies_via_the_font_size_command() {
 }
 
 
-# Everything omamac writes into Ghostty's config — family, size, transparency —
-# lives together under Applications > Ghostty, rather than some of it at the
-# root. Omarchy nests the same way wherever a settings group has more than one
+# Ghostty's per-application settings live together under Applications >
+# Ghostty. The font FAMILY deliberately does not: it is system-wide, shared by
+# any app added later, so it stays at the root. Omarchy nests the same way wherever a settings group has more than one
 # knob (style.bar -> Position -> Top/Bottom).
 test_ghostty_groups_its_settings_together() {
   if ! command -v node >/dev/null 2>&1; then
@@ -498,9 +498,10 @@ test_ghostty_groups_its_settings_together() {
   fi
   local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Menlo"]},"fontSize":{"current":"16","options":["16"]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "ghostty-menu-report")
-  # Every Ghostty setting in one place, rather than split between the root and
-  # a section — which is what made moving Opacity alone the wrong shape.
-  assert_eq '["Family","Size","Opacity"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
+  # Ghostty's PER-APP settings. The font family is not one of them: it is a
+  # system-wide choice that an editor added later shares, so it lives at the
+  # root — the same shape omarchy-menu.jsonc gives style.font.
+  assert_eq '["Size","Opacity"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')"
   # Entering Font must NOT apply anything — it is a submenu, and a stray
   # apply here would try to set a font family literally called "Family".
   assert_eq 0 "$(printf '%s' "$out" | jq '[.messages[] | select(.action == "apply")] | length')" \
@@ -520,7 +521,7 @@ test_escape_walks_up_one_level_and_keeps_its_place() {
   local data='{"theme":{"current":"","options":[]},"font":{"current":"Menlo","options":["Menlo"]},"fontSize":{"current":"16","options":["14","16"]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "size-then-escape")
   # Back at Font, not at the root...
-  assert_eq '["Family","Size","Opacity"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+  assert_eq '["Size","Opacity"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
     "Escape from Size must land on Ghostty, not jump to the root"
   # ...with Size still highlighted, so the way back in is where you left it.
   assert_eq "Size" "$(printf '%s' "$out" | jq -r '.list[] | select(.on) | .name')"
