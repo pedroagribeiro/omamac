@@ -322,6 +322,12 @@ switch (scenario) {
     fireKey('ArrowDown'); fireKey('Enter');      // Capture
     fireKey('ArrowDown'); fireKey('Enter');      // Stop Recording (only while recording)
     break;
+  // Root: Theme, Font, Background, Applications, Capture, Deactivate — the
+  // last row, five downs away.
+  case 'deactivate':
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
+    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('Enter');
+    break;
   case 'capture-color':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
     fireKey('ArrowDown'); fireKey('Enter');      // Capture

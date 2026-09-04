@@ -210,12 +210,21 @@ hs = {
   fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
   json = { encode = stub_encode },
   execute = function(cmd) return "" end,
-  hotkey = { bind = function() end },
+  -- bind() returns a HANDLE now: the host keeps them so pausing can release
+  -- the chords, and applyActivation() enables them at load.
+  hotkey = { bind = function()
+    return { enable = function(self) return self end, disable = function(self) return self end }
+  end },
+  -- The host watches its state directory so `omamac resume`, typed in a
+  -- terminal, reaches this process.
+  pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
     -- about other behaviour and never fire it.
-    watcher = { new = function(fn) return { start = function(self) return self end } end },
+    watcher = { new = function(fn) return
+      { start = function(self) return self end, stop = function(self) return self end }
+    end },
   },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
@@ -322,12 +331,21 @@ hs = {
   fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
   json = { encode = stub_encode },
   execute = function(cmd) return "" end,
-  hotkey = { bind = function() end },
+  -- bind() returns a HANDLE now: the host keeps them so pausing can release
+  -- the chords, and applyActivation() enables them at load.
+  hotkey = { bind = function()
+    return { enable = function(self) return self end, disable = function(self) return self end }
+  end },
+  -- The host watches its state directory so `omamac resume`, typed in a
+  -- terminal, reaches this process.
+  pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
     -- about other behaviour and never fire it.
-    watcher = { new = function(fn) return { start = function(self) return self end } end },
+    watcher = { new = function(fn) return
+      { start = function(self) return self end, stop = function(self) return self end }
+    end },
   },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
@@ -458,12 +476,21 @@ hs = {
   json = { encode = stub_encode },
   base64 = { encode = function(b) return "B64<" .. #b .. ">" end },
   execute = function(cmd) return "" end,
-  hotkey = { bind = function() end },
+  -- bind() returns a HANDLE now: the host keeps them so pausing can release
+  -- the chords, and applyActivation() enables them at load.
+  hotkey = { bind = function()
+    return { enable = function(self) return self end, disable = function(self) return self end }
+  end },
+  -- The host watches its state directory so `omamac resume`, typed in a
+  -- terminal, reaches this process.
+  pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
     -- about other behaviour and never fire it.
-    watcher = { new = function(fn) return { start = function(self) return self end } end },
+    watcher = { new = function(fn) return
+      { start = function(self) return self end, stop = function(self) return self end }
+    end },
   },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
@@ -574,12 +601,21 @@ hs = {
   fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
   json = { encode = stub_encode },
   execute = function(cmd) return "" end,
-  hotkey = { bind = function() end },
+  -- bind() returns a HANDLE now: the host keeps them so pausing can release
+  -- the chords, and applyActivation() enables them at load.
+  hotkey = { bind = function()
+    return { enable = function(self) return self end, disable = function(self) return self end }
+  end },
+  -- The host watches its state directory so `omamac resume`, typed in a
+  -- terminal, reaches this process.
+  pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
     -- about other behaviour and never fire it.
-    watcher = { new = function(fn) return { start = function(self) return self end } end },
+    watcher = { new = function(fn) return
+      { start = function(self) return self end, stop = function(self) return self end }
+    end },
   },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
@@ -716,12 +752,21 @@ hs = {
   json = { encode = stub_encode },
   base64 = { encode = function(b) return "B64<" .. #b .. ">" end },
   execute = function(cmd) return "" end,
-  hotkey = { bind = function() end },
+  -- bind() returns a HANDLE now: the host keeps them so pausing can release
+  -- the chords, and applyActivation() enables them at load.
+  hotkey = { bind = function()
+    return { enable = function(self) return self end, disable = function(self) return self end }
+  end },
+  -- The host watches its state directory so `omamac resume`, typed in a
+  -- terminal, reaches this process.
+  pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
     -- about other behaviour and never fire it.
-    watcher = { new = function(fn) return { start = function(self) return self end } end },
+    watcher = { new = function(fn) return
+      { start = function(self) return self end, stop = function(self) return self end }
+    end },
   },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
@@ -808,7 +853,14 @@ hs = {
   json = { encode = function(t) return "{}" end },
   base64 = { encode = function(b) return "B64" end },
   execute = function(cmd) return "" end,
-  hotkey = { bind = function() end },
+  -- bind() returns a HANDLE now: the host keeps them so pausing can release
+  -- the chords, and applyActivation() enables them at load.
+  hotkey = { bind = function()
+    return { enable = function(self) return self end, disable = function(self) return self end }
+  end },
+  -- The host watches its state directory so `omamac resume`, typed in a
+  -- terminal, reaches this process.
+  pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     watcher = {
@@ -925,10 +977,19 @@ hs = {
   },
   base64 = { encode = function(b) return "B64" end },
   execute = function(cmd) return '{"colors":{}}' end,
-  hotkey = { bind = function() end },
+  -- bind() returns a HANDLE now: the host keeps them so pausing can release
+  -- the chords, and applyActivation() enables them at load.
+  hotkey = { bind = function()
+    return { enable = function(self) return self end, disable = function(self) return self end }
+  end },
+  -- The host watches its state directory so `omamac resume`, typed in a
+  -- terminal, reaches this process.
+  pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
-    watcher = { new = function(fn) return { start = function(self) return self end } end },
+    watcher = { new = function(fn) return
+      { start = function(self) return self end, stop = function(self) return self end }
+    end },
   },
   webview = {
     usercontent = { new = function(name) return { setCallback = function(self, cb) capturedCallback = cb end } end },
@@ -986,6 +1047,51 @@ LUAEOF
   assert_contains "$out" "stroke_w=1"
   assert_contains "$out" "radius=0"
   assert_contains "$out" "font=Test Mono"
+}
+
+# ------------------------------------------------------------------- pause --
+
+# The two hotkeys and the screen watcher are everything omamac does unprompted,
+# so pausing has to be able to reach all three. Binding a hotkey without keeping
+# the handle makes it impossible to release.
+test_hotkeys_are_held_so_they_can_be_released() {
+  local src; src=$(cat "$HOST")
+  assert_contains "$src" "local hotkeys = {"
+  assert_contains "$src" ":disable()"
+  assert_contains "$src" ":enable()"
+  assert_contains "$src" "screenWatcher:stop()"
+}
+
+# `omamac resume` is typed in a terminal and cannot reach into this Lua state,
+# so the host has to notice the marker file changing. Without the watcher,
+# resuming appears to do nothing until Hammerspoon is reloaded.
+test_the_host_watches_the_state_directory() {
+  local src; src=$(cat "$HOST")
+  assert_contains "$src" "hs.pathwatcher.new(STATE_DIR"
+  assert_contains "$src" "pauseWatcher:start()"
+  # Held in a module-level local, like every other watcher and timer here: an
+  # unreferenced one is collected and silently stops firing.
+  assert_contains "$src" "local pauseWatcher = nil"
+}
+
+# A paused omamac must come back paused. Applying the state only on CHANGE would
+# re-take the hotkeys on every reload.
+test_activation_is_applied_at_load_not_only_on_change() {
+  local src; src=$(cat "$HOST")
+  # The bare call, at the end, outside any function.
+  grep -qE '^applyActivation\(\)$' "$HOST" \
+    || fail "applyActivation() must run at load so a pause survives a reload"
+}
+
+# The guard used to be `b.cmd and (b.arg or b.args)`, which silently dropped
+# every message for a verb that takes no argument.
+test_a_bare_verb_is_not_dropped_by_the_apply_guard() {
+  local src; src=$(cat "$HOST")
+  case "$src" in
+    *'b.action == "apply" and b.cmd and (b.arg or b.args)'*)
+      fail "the apply guard must not require an argument — Deactivate posts none" ;;
+  esac
+  assert_contains "$src" 'b.action == "apply" and b.cmd then'
 }
 
 run_tests

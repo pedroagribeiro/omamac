@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# omamac-pause — stop omamac acting on its own, and start it again.
+#
+# omamac only does two things unprompted: it holds ⌘⌥O and ⌘⌃Space, and it
+# re-asserts the wallpaper when the display configuration changes. Pausing
+# releases both. Everything else omamac does happens because you asked for it,
+# so there is nothing else to switch off.
+#
+# It deliberately does NOT undo any theming. The pointers that make a theme take
+# effect — Zed's `"theme": "omamac"`, Claude Code's `custom:omamac`, the Ghostty
+# include, the bat alias, the AeroSpace template — live in the user's own config
+# files. omamac does not own those lines and will not edit them, so removing the
+# generated themes would leave those pointing at things that no longer exist.
+# Pausing changes no file any tool reads.
+#
+# The state is a marker file rather than something held in Hammerspoon, so it
+# survives a reload: a paused omamac comes back paused.
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+
+MARKER="paused"
+
+# The marker holds the time it was set, so `doctor` can say how long omamac has
+# been off rather than just that it is. Non-empty is what makes it true —
+# omamac_state_get returns "" for a missing key.
+is_paused() { [ -n "$(omamac_state_get "$MARKER")" ]; }
+
+do_pause() {
+  if is_paused; then
+    log_info "omamac is already paused."
+    return 0
+  fi
+  omamac_state_set "$MARKER" "$(date +'%Y-%m-%dT%H:%M:%S')"
+  # stdout, deliberately: the host surfaces an applied command's stdout as an
+  # alert, and this is the only chance to say how to come back — the menu that
+  # ran it is closing, and the hotkey that reopens it is about to be released.
+  printf 'omamac paused — resume with: omamac resume\n'
+}
+
+do_resume() {
+  if ! is_paused; then
+    log_info "omamac is not paused."
+    return 0
+  fi
+  omamac_state_clear "$MARKER"
+  printf 'omamac resumed\n'
+}
+
+usage() {
+  cat >&2 <<'EOF'
+omamac pause            release the hotkeys and stop the wallpaper watcher
+omamac resume           take them back
+omamac pause --status   exit 0 if paused, 1 if active
+omamac pause --since    print when it was paused, if it is
+EOF
+}
+
+case "${1:-}" in
+  pause)  shift; case "${1:-}" in
+            --status) is_paused && printf 'paused\n' || exit 1 ;;
+            --since)  is_paused && omamac_state_get "$MARKER" || exit 1 ;;
+            "")       do_pause ;;
+            *)        log_error "unknown argument: $1"; usage; exit 1 ;;
+          esac ;;
+  resume) shift; do_resume ;;
+  *)      usage; exit 1 ;;
+esac

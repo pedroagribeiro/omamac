@@ -26,7 +26,8 @@ omamac <command> [args]
   doctor
   slack [--copy]
   aerospace [px|--list|--current|--render]
-  capture [--screenshot|--record|--stop|--status]
+  capture [--screenshot|--record|--color "#rrggbb"|--stop|--status]
+  pause [--status|--since]   |  resume
   preview <wallpaper>|--theme <name>|--paths [--theme]
 EOF
 }
@@ -34,6 +35,9 @@ EOF
 cmd="${1:-}"; shift || true
 case "$cmd" in
   theme|font|font-size|opacity|padding|blur|bg|menu-data|preview|doctor|slack|aerospace|capture) exec "${OMAMAC_DIR}/bin/omamac-${cmd}" "$@" ;;
+  # Both verbs are one script: `resume` reads better than `pause --resume`
+  # in the message the alert shows, and the two share all their state.
+  pause|resume)  exec "${OMAMAC_DIR}/bin/omamac-pause" "$cmd" "$@" ;;
   --print-dir)   printf '%s\n' "$OMAMAC_DIR" ;;
   ""|-h|--help)  usage; [ -z "$cmd" ] && exit 1 || exit 0 ;;
   *)             printf 'omamac: unknown command: %s\n' "$cmd" >&2; usage; exit 1 ;;

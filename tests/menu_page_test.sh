@@ -332,8 +332,8 @@ test_root_rows_keep_their_own_icons() {
   # all verbatim from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  assert_eq '["\udb83\ude0c","\ue659","\uf03e","\uf00a","\uf030"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
-    "root keeps what is not app-specific: Theme, Font, Background, Applications, Capture"
+  assert_eq '["\udb83\ude0c","\ue659","\uf03e","\uf00a","\uf030","\uf011"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root keeps what is not app-specific: Theme, Font, Background, Applications, Capture, Deactivate"
 }
 
 # The Font menu is WIDER than every other card. Menu.qml:111 special-cases
@@ -774,6 +774,32 @@ test_the_colour_row_carries_omarchys_glyph() {
   # U+F00C9 sits above the BMP; jq -a spells it as a surrogate pair.
   assert_eq '"\udb80\udcc9"' "$(printf '%s' "$out" | jq -a -c '[.list[] | select(.name == "Color") | .icon] | .[0]')" \
     "U+F00C9, from omarchy-menu.jsonc"
+}
+
+# ---------------------------------------------------------------- deactivate --
+
+# Deactivate takes no argument, so the message carries `cmd` and nothing else.
+# The host used to require an argument before it would run anything, which made
+# this post silently do nothing — the guard is relaxed, and this pins the shape
+# that depends on it.
+test_deactivate_posts_a_bare_verb() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "deactivate")
+  assert_eq '{"action":"apply","cmd":"pause"}' "$(printf '%s' "$out" | jq -c '.[-1]')" \
+    "Deactivate must post cmd=pause with no argument"
+}
+
+test_deactivate_is_the_last_root_row() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "root-report")
+  assert_eq '["Theme","Font","Background","Applications","Capture","Deactivate"]' \
+    "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+    "Deactivate comes last — it is the only root row that is not a way in"
+}
+
+test_deactivate_carries_the_power_glyph() {
+  local out; out=$(run_driver "$CAPTURE_IDLE" "root-report")
+  assert_eq '"\uf011"' \
+    "$(printf '%s' "$out" | jq -a -c '[.list[] | select(.name == "Deactivate") | .icon] | .[0]')" \
+    "U+F011, fa-power-off"
 }
 
 run_tests

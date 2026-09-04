@@ -300,6 +300,16 @@ else
   fail cache "${parts} leftover .part file(s) under ${OMAMAC_CACHE}"
 fi
 
+# Paused is a CHOICE, not drift — so it is reported, never failed. Without this
+# line a paused omamac looks like a broken one: the hotkey does nothing, every
+# other check passes, and nothing anywhere says why.
+paused_at=$(omamac_state_get paused)
+if [ -n "$paused_at" ]; then
+  skip omamac "PAUSED since ${paused_at} — hotkeys released, wallpaper watcher stopped. Resume with: omamac resume"
+else
+  pass omamac "active"
+fi
+
 printf '\n'
 if [ "$fails" -eq 0 ]; then
   printf 'All checks passed.\n'

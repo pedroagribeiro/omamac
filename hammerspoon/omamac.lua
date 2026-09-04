@@ -183,16 +183,19 @@ end
 local function onMessage(message)
   local b = message and message.body
   if type(b) ~= "table" then return end
-  if b.action == "apply" and b.cmd and (b.arg or b.args) then
+  -- `cmd` alone is enough. It used to also require an argument, which silently
+  -- swallowed every message for a verb that takes none — Deactivate posts
+  -- `{cmd = "pause"}` and nothing happened, with no error anywhere.
+  if b.action == "apply" and b.cmd then
     hideMenu()
     -- async: never block the UI on a switch.
     -- `args` carries a whole argv when one value is not enough — assigning a
     -- workspace needs a flag and a value. `arg` stays for the single-value
-    -- case, which is every other level.
+    -- case, and both are absent for a bare verb.
     local argv = { b.cmd }
     if type(b.args) == "table" then
       for _, a in ipairs(b.args) do argv[#argv + 1] = a end
-    else
+    elseif b.arg ~= nil then
       argv[#argv + 1] = b.arg
     end
     runAsync(argv, function(_, stdout)
@@ -348,8 +351,13 @@ end
 -- cmd+alt+O, not cmd+alt+SPACE. macOS holds cmd+alt+space for "Show Finder
 -- search window"; disabling that preference does not release the running
 -- registration without a re-login, so RegisterEventHotKey fails with -9878.
-hs.hotkey.bind({ "cmd", "alt" }, "o", openMenu)
-hs.hotkey.bind({ "cmd", "ctrl" }, "space", function() runAsync({ "bg", "--next" }) end)
+-- Held rather than discarded: pausing has to be able to give these back to the
+-- system, and a bound hotkey is the only thing standing between omamac and
+-- another app that wants the same chord.
+local hotkeys = {
+  hs.hotkey.bind({ "cmd", "alt" }, "o", openMenu),
+  hs.hotkey.bind({ "cmd", "ctrl" }, "space", function() runAsync({ "bg", "--next" }) end),
+}
 
 -- Re-assert the wallpaper when displays change.
 --
@@ -379,6 +387,55 @@ local function scheduleWallpaperReassert()
   end)
 end
 screenWatcher = hs.screen.watcher.new(scheduleWallpaperReassert)
-screenWatcher:start()
 
-OmamacMenu = { open = openMenu, hide = hideMenu, reassert = scheduleWallpaperReassert }
+-- Pausing.
+--
+-- The two hotkeys above and the screen watcher below are everything omamac does
+-- without being asked, so pausing is exactly: release them. Nothing that any
+-- tool reads is touched — see bin/omamac-pause for why undoing the theming is
+-- not what this does.
+--
+-- The truth lives in a marker file, not in this process, for two reasons: a
+-- paused omamac must come back paused after a Hammerspoon reload, and `omamac
+-- resume` is typed in a terminal, which cannot reach into this Lua state. A
+-- path watcher on the state directory is what closes that gap.
+local STATE_DIR = os.getenv("OMAMAC_STATE") or (HOME .. "/.local/state/omamac")
+local pauseWatcher = nil
+
+local function isPaused()
+  local f = io.open(STATE_DIR .. "/paused", "r")
+  if not f then return false end
+  local v = f:read("*a") or ""
+  f:close()
+  return v:gsub("%s", "") ~= ""
+end
+
+local function applyActivation()
+  local paused = isPaused()
+  for _, k in ipairs(hotkeys) do
+    if paused then k:disable() else k:enable() end
+  end
+  if paused then screenWatcher:stop() else screenWatcher:start() end
+  return paused
+end
+
+-- The directory has to exist before it can be watched, and on a fresh install
+-- nothing has written state yet. Without this the watcher attaches to a path
+-- that is not there and `omamac resume` appears to do nothing until Hammerspoon
+-- is reloaded.
+--
+-- os.execute, not hs.fs: this runs at LOAD, and reaching for another hs module
+-- here makes the host unloadable anywhere that module is absent — which broke
+-- every one of this file's own test harnesses the moment it was tried. Plain
+-- Lua costs one mkdir at startup and depends on nothing.
+os.execute("mkdir -p " .. shquote(STATE_DIR))
+pauseWatcher = hs.pathwatcher.new(STATE_DIR, function() applyActivation() end)
+pauseWatcher:start()
+
+-- At load, not just on change: this is what makes a pause survive a reload.
+applyActivation()
+
+OmamacMenu = {
+  open = openMenu, hide = hideMenu, reassert = scheduleWallpaperReassert,
+  paused = isPaused, refresh = applyActivation,
+}

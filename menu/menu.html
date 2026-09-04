@@ -310,6 +310,10 @@
   const ROOT_ICONS = {
     Theme: "\u{f0e0c}", Font: "\u{e659}", Background: "\u{f03e}",
     Applications: "\u{f00a}", Capture: "\u{f030}",
+    // U+F011, fa-power-off — verified present in the Nerd Font. omamac's own
+    // entry: Omarchy has no equivalent, since nothing there holds a hotkey the
+    // way this does.
+    Deactivate: "\u{f011}",
   };
   // Omarchy's own glyphs, read out of default/omarchy/omarchy-menu.jsonc at
   // v4.0.2: trigger.capture and trigger.capture.screenshot are both U+F030,
@@ -426,10 +430,15 @@
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Font", "Background", "Applications", "Capture"],
+      items: () => ["Theme", "Font", "Background", "Applications", "Capture", "Deactivate"],
       icon: (name) => ROOT_ICONS[name] || "",
       into: { Theme: "theme", Font: "font", Background: "bg", Applications: "apps",
               Capture: "capture" },
+      // Last, and the only root row that is not a way in to something. It
+      // releases the hotkeys, so it is also the only row that makes this menu
+      // unreachable — which is why `omamac pause` prints how to come back and
+      // the host shows that as the alert.
+      runs: { Deactivate: ["pause"] },
     },
     theme: {
       crumb: "Theme", cmd: "theme", picker: "theme", labels: true, parent: "root",
