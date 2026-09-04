@@ -34,6 +34,39 @@ are all lifted from the upstream QML and shell sources at a pinned release tag.
 [Configuration](#configuration) · [How it works](#how-it-works) ·
 [Development](#development)
 
+## The status bar
+
+<kbd>◉</kbd> in the menu bar, filled when omamac is active and hollow when it is
+paused. Clicking it gives you the theme you are on, the two things the hotkeys
+do, and a way to reload — the thing you reach for when something is wedged.
+
+```
+◉                              ○
+  tokyo-night                    omamac is paused
+  ─────────────                  ─────────────────
+  Open Menu                      Resume
+  Next Wallpaper                 ─────────────────
+  ─────────────                  Reload omamac
+  Deactivate
+  ─────────────
+  Reload omamac
+```
+
+It is **not** removed by pausing — that is the whole point. Deactivate releases
+the hotkeys, which makes this the only affordance left, so it stays and changes
+its title instead. Without it, pausing would be a one-way door out of the menu.
+
+<details>
+<summary>Why a plain character and not an icon</summary>
+
+SF Symbols do not come back from `hs.image.imageFromName` in this Hammerspoon
+build — every name returns nil, measured. A Nerd Font glyph does render, via
+`hs.styledtext` naming the family, but that would make the status item depend on
+the very thing omamac exists to help you choose. `◉` and `○` are in the system
+font everywhere, and they carry the state as well as the identity.
+
+</details>
+
 ## The menu
 
 Six things at the root. Type to filter, arrows to move, <kbd>Enter</kbd> to
@@ -300,15 +333,32 @@ under `~/.cache/omamac`, so the first open of a picker needs network.
 
 ### Homebrew
 
+From nothing at all:
+
 ```bash
-git clone https://github.com/pedroagribeiro/omamac.git ~/personal/omamac
-cd ~/personal/omamac
-./install
+curl -fsSL https://raw.githubusercontent.com/pedroagribeiro/omamac/main/install | bash
 ```
 
-That installs `jq` and Hammerspoon, symlinks `bin/omamac` into `~/.local/bin`,
-and writes `~/.hammerspoon/init.lua` — unless you already have one, in which case
-it prints the single line to add by hand rather than overwriting your config.
+or from a checkout:
+
+```bash
+git clone https://github.com/pedroagribeiro/omamac.git ~/personal/omamac
+cd ~/personal/omamac && ./install
+```
+
+Piped, there is no checkout to install *from*, so it clones one into
+`~/.local/share/omamac` first. Either way it installs `jq` and Hammerspoon,
+symlinks `bin/omamac` into `~/.local/bin`, warns if that is not on your `PATH`,
+and writes `~/.hammerspoon/init.lua`.
+
+**Re-run it to upgrade** — it pulls, relinks, and rewrites only the `init.lua` it
+wrote itself. An `init.lua` it did not write is left alone, symlink included,
+and it prints the two lines to add by hand instead. `./install --uninstall`
+removes the symlink and tells you what is left.
+
+It will not install Homebrew for you. That asks for your password, changes
+ownership of directories outside this project, and takes minutes — not something
+a script you piped from the internet should do behind your back.
 
 Then launch Hammerspoon, grant it Accessibility permission when macOS prompts
 (System Settings → Privacy & Security → Accessibility), and press

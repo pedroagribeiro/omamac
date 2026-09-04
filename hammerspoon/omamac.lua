@@ -401,13 +401,54 @@ screenWatcher = hs.screen.watcher.new(scheduleWallpaperReassert)
 -- path watcher on the state directory is what closes that gap.
 local STATE_DIR = os.getenv("OMAMAC_STATE") or (HOME .. "/.local/state/omamac")
 local pauseWatcher = nil
+local menubarItem = nil
 
-local function isPaused()
-  local f = io.open(STATE_DIR .. "/paused", "r")
-  if not f then return false end
+-- Reads a state key in-process. The CLI could answer these, but the status item
+-- rebuilds its menu on every click and a subprocess per click is a visible
+-- hitch — these are one-line files that omamac itself writes.
+local function stateRead(key)
+  local f = io.open(STATE_DIR .. "/" .. key, "r")
+  if not f then return "" end
   local v = f:read("*a") or ""
   f:close()
-  return v:gsub("%s", "") ~= ""
+  return (v:gsub("%s+$", ""))
+end
+
+local function isPaused() return stateRead("paused") ~= "" end
+
+-- Filled when active, hollow when paused.
+--
+-- Plain characters rather than an icon: SF Symbols do not come back from
+-- hs.image.imageFromName in this Hammerspoon build (measured — every name
+-- returns nil), and a Nerd Font glyph renders only where that family is
+-- installed, which would make the status item depend on the very thing omamac
+-- is used to choose. These are in the system font everywhere.
+local ACTIVE_TITLE = "◉"
+local PAUSED_TITLE = "○"
+
+-- Built fresh on every click, so it always reflects the current state rather
+-- than whatever was true when the item was created.
+local function menubarMenu()
+  if isPaused() then
+    return {
+      { title = "omamac is paused", disabled = true },
+      { title = "-" },
+      { title = "Resume", fn = function() runAsync({ "resume" }) end },
+      { title = "-" },
+      { title = "Reload omamac", fn = function() hs.reload() end },
+    }
+  end
+  local theme = stateRead("theme.name")
+  return {
+    { title = (theme ~= "" and theme or "no theme yet"), disabled = true },
+    { title = "-" },
+    { title = "Open Menu", fn = function() openMenu() end },
+    { title = "Next Wallpaper", fn = function() runAsync({ "bg", "--next" }) end },
+    { title = "-" },
+    { title = "Deactivate", fn = function() runAsync({ "pause" }) end },
+    { title = "-" },
+    { title = "Reload omamac", fn = function() hs.reload() end },
+  }
 end
 
 local function applyActivation()
@@ -416,6 +457,12 @@ local function applyActivation()
     if paused then k:disable() else k:enable() end
   end
   if paused then screenWatcher:stop() else screenWatcher:start() end
+  -- The status item is NOT disabled by pausing — it is the way back. Releasing
+  -- the hotkeys is what makes this menu the only reachable affordance, so it
+  -- stays and changes its title instead.
+  if menubarItem then
+    menubarItem:setTitle(paused and PAUSED_TITLE or ACTIVE_TITLE)
+  end
   return paused
 end
 
@@ -429,6 +476,14 @@ end
 -- every one of this file's own test harnesses the moment it was tried. Plain
 -- Lua costs one mkdir at startup and depends on nothing.
 os.execute("mkdir -p " .. shquote(STATE_DIR))
+
+-- Held in a module-level local, like everything else here that macOS keeps a
+-- reference to: an unreferenced hs.menubar is collected and vanishes from the
+-- bar. setMenu takes a FUNCTION so the menu is rebuilt per click.
+menubarItem = hs.menubar.new()
+if menubarItem then
+  menubarItem:setMenu(menubarMenu)
+end
 pauseWatcher = hs.pathwatcher.new(STATE_DIR, function() applyActivation() end)
 pauseWatcher:start()
 
@@ -438,4 +493,7 @@ applyActivation()
 OmamacMenu = {
   open = openMenu, hide = hideMenu, reassert = scheduleWallpaperReassert,
   paused = isPaused, refresh = applyActivation,
+  -- Test seam: the status item's menu is pure given the state on disk, so it
+  -- can be asserted without a menu bar.
+  menubarMenu = menubarMenu,
 }

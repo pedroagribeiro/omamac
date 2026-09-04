@@ -218,6 +218,15 @@ hs = {
   -- The host watches its state directory so `omamac resume`, typed in a
   -- terminal, reaches this process.
   pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
+  -- The status item. new() may legitimately return nil on a Mac with no menu
+  -- bar available, so the host guards it; the stub returns a handle.
+  menubar = { new = function()
+    return {
+      setMenu = function(self) return self end,
+      setTitle = function(self) return self end,
+      delete = function(self) return self end,
+    }
+  end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
@@ -339,6 +348,15 @@ hs = {
   -- The host watches its state directory so `omamac resume`, typed in a
   -- terminal, reaches this process.
   pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
+  -- The status item. new() may legitimately return nil on a Mac with no menu
+  -- bar available, so the host guards it; the stub returns a handle.
+  menubar = { new = function()
+    return {
+      setMenu = function(self) return self end,
+      setTitle = function(self) return self end,
+      delete = function(self) return self end,
+    }
+  end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
@@ -484,6 +502,15 @@ hs = {
   -- The host watches its state directory so `omamac resume`, typed in a
   -- terminal, reaches this process.
   pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
+  -- The status item. new() may legitimately return nil on a Mac with no menu
+  -- bar available, so the host guards it; the stub returns a handle.
+  menubar = { new = function()
+    return {
+      setMenu = function(self) return self end,
+      setTitle = function(self) return self end,
+      delete = function(self) return self end,
+    }
+  end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
@@ -609,6 +636,15 @@ hs = {
   -- The host watches its state directory so `omamac resume`, typed in a
   -- terminal, reaches this process.
   pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
+  -- The status item. new() may legitimately return nil on a Mac with no menu
+  -- bar available, so the host guards it; the stub returns a handle.
+  menubar = { new = function()
+    return {
+      setMenu = function(self) return self end,
+      setTitle = function(self) return self end,
+      delete = function(self) return self end,
+    }
+  end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
@@ -760,6 +796,15 @@ hs = {
   -- The host watches its state directory so `omamac resume`, typed in a
   -- terminal, reaches this process.
   pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
+  -- The status item. new() may legitimately return nil on a Mac with no menu
+  -- bar available, so the host guards it; the stub returns a handle.
+  menubar = { new = function()
+    return {
+      setMenu = function(self) return self end,
+      setTitle = function(self) return self end,
+      delete = function(self) return self end,
+    }
+  end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     -- The host starts a display-change watcher at load; these harnesses are
@@ -861,6 +906,15 @@ hs = {
   -- The host watches its state directory so `omamac resume`, typed in a
   -- terminal, reaches this process.
   pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
+  -- The status item. new() may legitimately return nil on a Mac with no menu
+  -- bar available, so the host guards it; the stub returns a handle.
+  menubar = { new = function()
+    return {
+      setMenu = function(self) return self end,
+      setTitle = function(self) return self end,
+      delete = function(self) return self end,
+    }
+  end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     watcher = {
@@ -985,6 +1039,15 @@ hs = {
   -- The host watches its state directory so `omamac resume`, typed in a
   -- terminal, reaches this process.
   pathwatcher = { new = function(_, _) return { start = function(self) return self end } end },
+  -- The status item. new() may legitimately return nil on a Mac with no menu
+  -- bar available, so the host guards it; the stub returns a handle.
+  menubar = { new = function()
+    return {
+      setMenu = function(self) return self end,
+      setTitle = function(self) return self end,
+      delete = function(self) return self end,
+    }
+  end },
   screen = {
     mainScreen = function() return { fullFrame = function() return { x = 0, y = 0, w = 800, h = 600 } end } end,
     watcher = { new = function(fn) return
@@ -1092,6 +1155,118 @@ test_a_bare_verb_is_not_dropped_by_the_apply_guard() {
       fail "the apply guard must not require an argument — Deactivate posts none" ;;
   esac
   assert_contains "$src" 'b.action == "apply" and b.cmd then'
+}
+
+# ---------------------------------------------------------------- menubar --
+
+# The status item's menu is pure given the state on disk, so it can be asserted
+# without a menu bar. Loads the host under the same stubs the other harnesses
+# use, points OMAMAC_STATE at a temp dir, and reads back the menu it builds.
+menubar_menu_titles() {
+  local paused="$1"
+  local harness="$TMPDIR_TEST/menubar_harness.lua"
+  mkdir -p "$TMPDIR_TEST/state"
+  if [ "$paused" = "paused" ]; then
+    printf '2026-01-01T00:00:00\n' > "$TMPDIR_TEST/state/paused"
+  else
+    rm -f "$TMPDIR_TEST/state/paused"
+    printf 'tokyo-night\n' > "$TMPDIR_TEST/state/theme.name"
+  fi
+  cat > "$harness" <<'LUA'
+-- hs.ipc is a real Hammerspoon module; intercept require() before the host
+-- file's own require("hs.ipc") call reaches the module system.
+package.loaded["hs.ipc"] = {}
+local function noop() end
+hs = {
+  ipc = {},
+  fnutils = { imap = function(t, fn) local r = {} for i, v in ipairs(t) do r[i] = fn(v) end return r end },
+  json = { encode = function() return "{}" end, decode = function() return {} end },
+  execute = function() return "" end,
+  hotkey = { bind = function()
+    return { enable = function(self) return self end, disable = function(self) return self end }
+  end },
+  pathwatcher = { new = function() return { start = function(self) return self end } end },
+  menubar = { new = function()
+    return { setMenu = function(self) return self end, setTitle = function(self) return self end }
+  end },
+  screen = {
+    mainScreen = function() return { fullFrame = function() return { x=0, y=0, w=800, h=600 } end } end,
+    watcher = { new = function() return
+      { start = function(self) return self end, stop = function(self) return self end } end },
+  },
+  webview = { usercontent = { new = function() return { setCallback = noop } end },
+              new = function() return { windowStyle=noop, allowTextEntry=noop, transparent=noop,
+                level=noop, deleteOnClose=noop, html=noop, show=function(s) return s end,
+                bringToFront=noop, hswindow=function() return nil end, delete=noop } end },
+  drawing = { windowLevels = { modalPanel = 8, screenSaver = 1000 } },
+  canvas = { windowBehaviors = { canJoinAllSpaces = 1 } },
+  timer = { doAfter = function() return { stop = noop } end },
+  task = { new = function() return { start = noop } end },
+  alert = { show = noop },
+  base64 = { encode = function(b) return b end },
+  application = { get = function() return nil end,
+                  frontmostApplication = function() return { name = function() return "Hammerspoon" end } end },
+  eventtap = { new = function() return { start = noop, stop = noop } end,
+               event = { types = {}, newMouseEvent = function() return { post = noop } end } },
+  mouse = { absolutePosition = function() return { x = 0, y = 0 } end },
+  window = { orderedWindows = function() return {} end },
+  image = { imageFromPath = function() return nil end },
+  processInfo = { processID = 1 },
+  reload = noop,
+}
+local ok, err = pcall(dofile, os.getenv("HAMMERSPOON_HOST"))
+if not ok then print("failed to load host under stubs: " .. tostring(err)); os.exit(1) end
+-- Reports whether each row can actually be CLICKED, not just that its text is
+-- there. A "Resume" that is present but inert reads the same to a title-only
+-- assertion and is useless to the user.
+local titles = {}
+for _, item in ipairs(OmamacMenu.menubarMenu()) do
+  local usable = (type(item.fn) == "function") and not item.disabled
+  titles[#titles + 1] = item.title .. (usable and "[click]" or "[inert]")
+end
+print(table.concat(titles, "|"))
+LUA
+  OMAMAC_STATE="$TMPDIR_TEST/state" OMAMAC_DIR="$OMAMAC_ROOT" HAMMERSPOON_HOST="$HOST" \
+    lua_run "$harness" 2>&1 | tail -1
+}
+
+# The status item is the ONLY affordance left once the hotkeys are released, so
+# a paused menu that does not offer Resume is a dead end.
+test_the_paused_menubar_offers_the_way_back() {
+  local titles; titles=$(menubar_menu_titles paused)
+  # Clickable, not merely present.
+  assert_contains "$titles" "Resume[click]"
+  assert_contains "$titles" "omamac is paused[inert]"
+  case "$titles" in *Deactivate*) fail "a paused omamac must not offer Deactivate again" ;; esac
+}
+
+test_the_active_menubar_offers_the_usual_actions() {
+  local titles; titles=$(menubar_menu_titles active)
+  assert_contains "$titles" "Open Menu[click]"
+  assert_contains "$titles" "Next Wallpaper[click]"
+  assert_contains "$titles" "Deactivate[click]"
+  case "$titles" in *Resume*) fail "an active omamac must not offer Resume" ;; esac
+}
+
+# Like AeroSpace showing its workspace: the item says what omamac is currently
+# showing, read from state rather than by shelling out on every click.
+test_the_active_menubar_names_the_current_theme() {
+  assert_contains "$(menubar_menu_titles active)" "tokyo-night"
+}
+
+# Reloading is what the user reaches for when something is wedged, so it has to
+# be there in BOTH states.
+test_reload_is_offered_whether_paused_or_not() {
+  assert_contains "$(menubar_menu_titles active)" "Reload omamac[click]"
+  assert_contains "$(menubar_menu_titles paused)" "Reload omamac[click]"
+}
+
+test_the_status_item_is_held_and_survives_pausing() {
+  local src; src=$(cat "$HOST")
+  assert_contains "$src" "local menubarItem = nil"
+  # Pausing must change its TITLE, not delete it — it is the way back.
+  assert_contains "$src" "menubarItem:setTitle"
+  case "$src" in *"menubarItem:delete()"*) fail "pausing must not remove the status item" ;; esac
 }
 
 run_tests
