@@ -314,7 +314,15 @@
     // entry: Omarchy has no equivalent, since nothing there holds a hotkey the
     // way this does.
     Deactivate: "\u{f011}",
+    // U+F0493, mdi toggle-switch — verified present.
+    Targets: "\u{f0493}",
   };
+  // Inside Targets: on and off are the two states of the same switch, so the
+  // row's own glyph carries the state instead of the tick used elsewhere. A
+  // tick would say "this is the current one" in a list where every row is
+  // independently on or off.
+  const TARGET_ON = "\u{f205}";   // fa toggle-on
+  const TARGET_OFF = "\u{f0ae}";  // fa toggle-off
   // Omarchy's own glyphs, read out of default/omarchy/omarchy-menu.jsonc at
   // v4.0.2: trigger.capture and trigger.capture.screenshot are both U+F030,
   // and every screenrecord row is U+F03D. Both verified present in the Nerd
@@ -430,10 +438,10 @@
   const LEVELS = {
     root: {
       crumb: "Go",
-      items: () => ["Theme", "Font", "Background", "Applications", "Capture", "Deactivate"],
+      items: () => ["Theme", "Font", "Background", "Applications", "Capture", "Targets", "Deactivate"],
       icon: (name) => ROOT_ICONS[name] || "",
       into: { Theme: "theme", Font: "font", Background: "bg", Applications: "apps",
-              Capture: "capture" },
+              Capture: "capture", Targets: "targets" },
       // Last, and the only root row that is not a way in to something. It
       // releases the hotkeys, so it is also the only row that makes this menu
       // unreachable — which is why `omamac pause` prints how to come back and
@@ -470,6 +478,25 @@
       // bg.current is an absolute path; the options are basenames.
       current: () => String(DATA.bg.current || "").split("/").pop(),
       items: () => DATA.bg.options || [],
+    },
+    // Which of the things omamac writes to are switched on. Switching one off
+    // stops omamac writing to it; it does not undo what is already there —
+    // see bin/omamac-targets for why that would be worse.
+    targets: {
+      crumb: "Targets", parent: "root",
+      items: () => (DATA.targets || []).map((t) => t.label),
+      icon: (label) => {
+        const t = (DATA.targets || []).find((x) => x.label === label);
+        return t && t.on ? TARGET_ON : TARGET_OFF;
+      },
+      // Toggling sends the NAME, never the label: "macOS appearance" is a
+      // heading, `macos` is the thing.
+      argsOf: (label) => {
+        const t = (DATA.targets || []).find((x) => x.label === label);
+        return t ? ["--toggle", t.name] : null;
+      },
+      cmd: "targets",
+      rows: { height: 60, gap: 6, name: 19, icon: 20 },
     },
     // Screenshots and recording. Upstream's order, from omarchy-menu.jsonc:
     // Screenshot, then Stop (only while recording), then Screenrecord.
@@ -517,7 +544,13 @@
     // bin/omamac-slack for why Slack in particular has no automatic path.
     apps: {
       crumb: "Applications", parent: "root",
-      items: () => ["AeroSpace", "Ghostty", "Slack"],
+      // AeroSpace disappears when it is switched off in Targets: its Gaps and
+      // Workspaces levels write to a config omamac has been told to leave
+      // alone, so offering them would be offering a no-op.
+      items: () => {
+        const off = (DATA.targets || []).some((t) => t.name === "aerospace" && !t.on);
+        return off ? ["Ghostty", "Slack"] : ["AeroSpace", "Ghostty", "Slack"];
+      },
       icon: (name) => APP_ICONS[name] || "",
       into: { AeroSpace: "aerospace", Ghostty: "ghostty" },
       runs: { Slack: ["slack", "--copy"] },

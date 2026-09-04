@@ -28,6 +28,7 @@ omamac <command> [args]
   aerospace [px|--list|--current|--render]
   capture [--screenshot|--record|--color "#rrggbb"|--stop|--status]
   pause [--status|--since]   |  resume
+  targets [--enable|--disable|--toggle|--enabled <name>|--list]
   preview <wallpaper>|--theme <name>|--paths [--theme]
 EOF
 }
@@ -38,6 +39,7 @@ case "$cmd" in
   # Both verbs are one script: `resume` reads better than `pause --resume`
   # in the message the alert shows, and the two share all their state.
   pause|resume)  exec "${OMAMAC_DIR}/bin/omamac-pause" "$cmd" "$@" ;;
+  targets)       exec "${OMAMAC_DIR}/bin/omamac-targets" "$@" ;;
   --print-dir)   printf '%s\n' "$OMAMAC_DIR" ;;
   ""|-h|--help)  usage; [ -z "$cmd" ] && exit 1 || exit 0 ;;
   *)             printf 'omamac: unknown command: %s\n' "$cmd" >&2; usage; exit 1 ;;

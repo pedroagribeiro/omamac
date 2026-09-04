@@ -10,7 +10,7 @@ appearance and wallpaper together — from a single theme definition.
 [![platform](https://img.shields.io/badge/platform-macOS-111111?style=flat-square&logo=apple&logoColor=white)](#requirements)
 [![themes](https://img.shields.io/badge/themes-22-1f6f5c?style=flat-square)](#the-themes)
 [![ported from](https://img.shields.io/badge/ported%20from-Omarchy%20v4.0.2-1f6f5c?style=flat-square)](#credits)
-[![tests](https://img.shields.io/badge/tests-371-1f6f5c?style=flat-square)](#development)
+[![tests](https://img.shields.io/badge/tests-408-1f6f5c?style=flat-square)](#development)
 [![license](https://img.shields.io/badge/license-MIT-1f6f5c?style=flat-square)](LICENSE)
 
 <img src="docs/images/menu-theme.jpg" alt="The theme picker: a coverflow of theme previews, centred on Osaka Jade" width="100%">
@@ -69,7 +69,7 @@ font everywhere, and they carry the state as well as the identity.
 
 ## The menu
 
-Six things at the root. Type to filter, arrows to move, <kbd>Enter</kbd> to
+Seven things at the root. Type to filter, arrows to move, <kbd>Enter</kbd> to
 apply, <kbd>Esc</kbd> to go back one level and then close.
 
 <div align="center">
@@ -254,6 +254,47 @@ and colour-correct, but an image element scaled to a whole screen renders empty
 inside a full-screen canvas.
 
 </details>
+
+### Targets
+
+Ten things omamac writes to, each with its own switch. "I want omamac, but not
+touching my AeroSpace config" is the case this exists for, and it generalises to
+any of them.
+
+```
+Targets…
+   Ghostty              on
+   Neovim               on
+   Zed                  on
+   Claude Code          on
+   delta                on
+   btop                 on
+   bat                  on
+   macOS appearance     on
+   Wallpaper            on
+   AeroSpace            off
+```
+
+Switching one off means a theme switch skips it, `omamac doctor` reports it as
+`switched off` rather than as drift, and — for AeroSpace specifically —
+**Applications → AeroSpace disappears**, since its Gaps and Workspaces levels
+would be writing to a config omamac has been told to leave alone.
+
+Off means **stop writing**, not undo. Same reasoning as Deactivate: the line
+that makes a theme take effect lives in your own config — Zed's
+`"theme": "omamac"`, the Ghostty include, the bat alias — omamac does not own
+it, and deleting the generated file underneath would leave it pointing at
+nothing.
+
+```bash
+omamac targets                    # what is on
+omamac targets --disable btop
+omamac targets --toggle aerospace
+```
+
+Unlike every other list in omamac, these rows carry a switch glyph rather than a
+tick. A tick means "this is the current one"; here each row is independently on
+or off, which is a different idea.
 
 ### Deactivate
 
@@ -558,6 +599,7 @@ omamac padding    [points|--list|--current]
 omamac blur       [radius|--list|--current]
 omamac bg         [name|--next|--reapply|--list|--current]
 omamac aerospace  [gaps|--workspace <n>=<monitor>|--workspaces|--monitors|--render|--list|--current]
+omamac targets    [--enable|--disable|--toggle|--enabled <name>|--list]
 omamac pause      [--status|--since]
 omamac resume
 omamac capture    --screenshot|--record [--region "X,Y WxH"] [--audio]
@@ -697,7 +739,7 @@ or `runs` (a single action), and a glyph in `APP_ICONS` — all in
 ./tests/run
 ```
 
-371 tests, plain bash — no framework — needing `node`, a Lua front-end, `jq` and
+408 tests, plain bash — no framework — needing `node`, a Lua front-end, `jq` and
 macOS's `plutil`. There's deliberately no flake `checks` output: none of those
 exist in a Nix sandbox, and a check that can never pass is worse than none.
 

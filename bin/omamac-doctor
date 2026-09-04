@@ -30,9 +30,47 @@ OSASCRIPT="${OMAMAC_OSASCRIPT:-osascript}"
 
 fails=0
 
-pass() { printf '  ok    %-8s %s\n' "$1" "$2"; }
-fail() { printf '  FAIL  %-8s %s\n' "$1" "$2"; fails=$((fails + 1)); }
-skip() { printf '  skip  %-8s %s\n' "$1" "$2"; }
+# The disabled list, read ONCE. Asking the CLI per check would be thirty
+# subprocesses for a command that is meant to be cheap enough to run on a whim.
+DISABLED=$(cat "${OMAMAC_STATE}/disabled" 2>/dev/null || printf '')
+
+# doctor's column tags are not all target names — it says `aero` and `bg` where
+# the targets are `aerospace` and `wallpaper`. Mapping here rather than renaming
+# the columns keeps its output aligned at eight characters.
+target_for() {
+  case "$1" in
+    aero) printf 'aerospace' ;;
+    bg)   printf 'wallpaper' ;;
+    *)    printf '%s' "$1" ;;
+  esac
+}
+
+target_off() {
+  local t; t=$(target_for "$1")
+  printf '%s\n' "$DISABLED" | grep -qxF -e "$t"
+}
+
+# A target switched off is announced once and then stays quiet. Reporting its
+# stale files as drift would be wrong — omamac was told to stop writing them —
+# and reporting them as `ok` would be worse, since they are whatever the last
+# render left behind.
+ANNOUNCED=""
+note_off() {
+  case " $ANNOUNCED " in *" $1 "*) return 0 ;; esac
+  ANNOUNCED="$ANNOUNCED $1"
+  printf '  skip  %-8s switched off — omamac is not writing to it\n' "$1"
+}
+
+pass() { if target_off "$1"; then note_off "$1"; return; fi; printf '  ok    %-8s %s\n' "$1" "$2"; }
+fail() { if target_off "$1"; then note_off "$1"; return; fi; printf '  FAIL  %-8s %s\n' "$1" "$2"; fails=$((fails + 1)); }
+# `skip` is intercepted too, not just pass/fail. Several sections short-circuit
+# with their own skip — "no aerospace template", "no wallpaper recorded" — and
+# would otherwise report that reason for a target that is simply switched off,
+# which is a different and less useful thing to say.
+skip() {
+  if target_off "$1"; then note_off "$1"; return; fi
+  printf '  skip  %-8s %s\n' "$1" "$2"
+}
 
 # A file exists AND mentions the current theme's background colour. That second
 # half is what makes this more than a stat(): a file left over from a previous

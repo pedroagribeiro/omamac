@@ -53,6 +53,8 @@ ghostty_reload() {
 # and stays exactly as fast as before.
 apply_theme_wallpaper() {
   local name="$1" cache_dir cur_bg first
+  # Switched off means omamac leaves the desktop alone entirely.
+  "${OMAMAC_DIR}/bin/omamac-targets" --enabled wallpaper 2>/dev/null || return 0
   cache_dir="${OMAMAC_CACHE}/backgrounds/${name}"
   cur_bg=$(omamac_state_get background)
   case "$cur_bg" in
@@ -112,7 +114,9 @@ theme_set() {
   # Ghostty first, and reload it immediately: it's the one renderer the user
   # is looking at, so time-to-visible-change must not wait on the other four
   # renderers, the state write, or a wallpaper fetch.
-  "${OMAMAC_DIR}/render/ghostty" "$dir" "$CONFIG_ROOT" "$font" "$font_size" "$opacity" "$padding" "$blur" || log_warn "ghostty render failed"
+  if "${OMAMAC_DIR}/bin/omamac-targets" --enabled ghostty 2>/dev/null; then
+    "${OMAMAC_DIR}/render/ghostty" "$dir" "$CONFIG_ROOT" "$font" "$font_size" "$opacity" "$padding" "$blur" || log_warn "ghostty render failed"
+  fi
   if ghostty_reload; then
     log_info "Ghostty: reloaded ${name}."
   else
@@ -126,13 +130,19 @@ theme_set() {
   # command — so each is `wait`ed individually by its own pid: that is what
   # lets a failing renderer log its own specific warning instead of
   # collapsing all seven into one generic message.
-  "${OMAMAC_DIR}/render/nvim"   "$dir" "$OMAMAC_STATE" & pid_nvim=$!
-  "${OMAMAC_DIR}/render/btop"   "$dir" "$CONFIG_ROOT"  & pid_btop=$!
-  "${OMAMAC_DIR}/render/bat"    "$dir" "$CONFIG_ROOT"  & pid_bat=$!
-  "${OMAMAC_DIR}/render/delta"  "$dir" "$CONFIG_ROOT"  & pid_delta=$!
-  "${OMAMAC_DIR}/render/zed"    "$dir" "$CONFIG_ROOT"  & pid_zed=$!
-  "${OMAMAC_DIR}/render/claude" "$dir" "$CLAUDE_DIR"   & pid_claude=$!
-  "${OMAMAC_DIR}/render/macos"  "$dir"                 & pid_macos=$!
+  # A target switched off is skipped, not run and ignored: the point of
+  # switching AeroSpace or the wallpaper off is that omamac stops touching them.
+  # `true` stands in for a skipped job so the wait below still has a pid to
+  # reap and the shape of this block does not change with the state.
+  enabled() { "${OMAMAC_DIR}/bin/omamac-targets" --enabled "$1" 2>/dev/null; }
+
+  if enabled nvim;   then "${OMAMAC_DIR}/render/nvim"   "$dir" "$OMAMAC_STATE" & else true & fi; pid_nvim=$!
+  if enabled btop;   then "${OMAMAC_DIR}/render/btop"   "$dir" "$CONFIG_ROOT"  & else true & fi; pid_btop=$!
+  if enabled bat;    then "${OMAMAC_DIR}/render/bat"    "$dir" "$CONFIG_ROOT"  & else true & fi; pid_bat=$!
+  if enabled delta;  then "${OMAMAC_DIR}/render/delta"  "$dir" "$CONFIG_ROOT"  & else true & fi; pid_delta=$!
+  if enabled zed;    then "${OMAMAC_DIR}/render/zed"    "$dir" "$CONFIG_ROOT"  & else true & fi; pid_zed=$!
+  if enabled claude; then "${OMAMAC_DIR}/render/claude" "$dir" "$CLAUDE_DIR"   & else true & fi; pid_claude=$!
+  if enabled macos;  then "${OMAMAC_DIR}/render/macos"  "$dir"                 & else true & fi; pid_macos=$!
 
   wait "$pid_nvim"   || log_warn "nvim render failed"
   wait "$pid_btop"   || log_warn "btop render failed"

@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# omamac-targets — which of the things omamac writes to are switched on.
+#
+# "I want omamac, but not touching my AeroSpace config" is the case this exists
+# for, and it generalises: any target can be switched off and the rest carry on.
+# A theme switch skips a disabled target, and `doctor` reports it as skipped
+# rather than as drift.
+#
+# Switching a target OFF does not undo what it already wrote, for the same
+# reason pausing does not: the line that makes a theme take effect lives in the
+# user's own config (Zed's `"theme": "omamac"`, the Ghostty include, the bat
+# alias), omamac does not own it, and deleting the generated file underneath it
+# would leave that pointing at nothing. Off means "stop writing", not "undo".
+set -uo pipefail
+OMAMAC_DIR="${OMAMAC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "${OMAMAC_DIR}/lib/log.sh"
+source "${OMAMAC_DIR}/lib/state.sh"
+
+# name:label, in the order the menu shows them. Ghostty first because it is the
+# one you are looking at; the rest roughly by how visible the change is.
+TARGETS=(
+  "ghostty:Ghostty"
+  "nvim:Neovim"
+  "zed:Zed"
+  "claude:Claude Code"
+  "delta:delta"
+  "btop:btop"
+  "bat:bat"
+  "macos:macOS appearance"
+  "wallpaper:Wallpaper"
+  "aerospace:AeroSpace"
+)
+
+label_of() {
+  local entry
+  for entry in "${TARGETS[@]}"; do
+    [ "${entry%%:*}" = "$1" ] && { printf '%s' "${entry#*:}"; return 0; }
+  done
+  return 1
+}
+
+is_target() { label_of "$1" >/dev/null 2>&1; }
+
+# Disabled targets are listed one per line. Absence means enabled, so a fresh
+# install has everything on without needing a file written first.
+disabled_file() { printf '%s/disabled\n' "$OMAMAC_STATE"; }
+
+is_enabled() {
+  local f; f=$(disabled_file)
+  [ -f "$f" ] || return 0
+  # -x for a whole-line match and -F for a literal one: without both, a target
+  # named as a substring of another would switch two things off at once.
+  ! grep -qxF -e "$1" "$f"
+}
+
+set_state() {
+  local name="$1" want="$2" f tmp
+  f=$(disabled_file)
+  mkdir -p "$OMAMAC_STATE"
+  tmp="${f}.$$"
+  # Rebuilt without the name, then re-added if it is being disabled. Keeps the
+  # file free of duplicates however many times this is called.
+  if [ -f "$f" ]; then grep -vxF -e "$name" "$f" > "$tmp" 2>/dev/null || : ; else : > "$tmp"; fi
+  [ "$want" = "off" ] && printf '%s\n' "$name" >> "$tmp"
+  # Renamed into place: a theme switch may be reading this concurrently, and a
+  # half-written list would silently skip whatever came after the cut.
+  mv -f "$tmp" "$f"
+}
+
+require_target() {
+  is_target "$1" || {
+    log_error "unknown target: $1"
+    log_error "known: $(printf '%s ' "${TARGETS[@]%%:*}")"
+    return 1
+  }
+}
+
+usage() {
+  cat >&2 <<'EOF'
+omamac targets                    show every target and whether it is on
+omamac targets --enable <name>    switch one back on
+omamac targets --disable <name>   stop omamac writing to it
+omamac targets --toggle <name>    flip it
+omamac targets --enabled <name>   exit 0 if on, 1 if off
+omamac targets --list             name<TAB>label<TAB>on|off, for the menu
+EOF
+}
+
+case "${1:-}" in
+  "")
+    for entry in "${TARGETS[@]}"; do
+      name="${entry%%:*}"
+      if is_enabled "$name"; then printf '  on   %s\n' "$name"; else printf '  off  %s\n' "$name"; fi
+    done
+    ;;
+  --list)
+    for entry in "${TARGETS[@]}"; do
+      name="${entry%%:*}"
+      if is_enabled "$name"; then st=on; else st=off; fi
+      printf '%s\t%s\t%s\n' "$name" "${entry#*:}" "$st"
+    done
+    ;;
+  --enabled)  require_target "${2:-}" || exit 1; is_enabled "$2" || exit 1 ;;
+  --enable)   require_target "${2:-}" || exit 1; set_state "$2" on
+              printf '%s on\n' "$(label_of "$2")" ;;
+  --disable)  require_target "${2:-}" || exit 1; set_state "$2" off
+              printf '%s off\n' "$(label_of "$2")" ;;
+  --toggle)   require_target "${2:-}" || exit 1
+              if is_enabled "$2"; then
+                set_state "$2" off; printf '%s off\n' "$(label_of "$2")"
+              else
+                set_state "$2" on;  printf '%s on\n' "$(label_of "$2")"
+              fi ;;
+  *) log_error "unknown argument: $1"; usage; exit 1 ;;
+esac

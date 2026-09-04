@@ -332,8 +332,8 @@ test_root_rows_keep_their_own_icons() {
   # all verbatim from omarchy-menu.jsonc).
   local data='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"colors":{}}'
   local out; out=$(run_driver "$data" "root-report")
-  assert_eq '["\udb83\ude0c","\ue659","\uf03e","\uf00a","\uf030","\uf011"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
-    "root keeps what is not app-specific: Theme, Font, Background, Applications, Capture, Deactivate"
+  assert_eq '["\udb83\ude0c","\ue659","\uf03e","\uf00a","\uf030","\udb81\udc93","\uf011"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "root keeps what is not app-specific, Targets and Deactivate included"
 }
 
 # The Font menu is WIDER than every other card. Menu.qml:111 special-cases
@@ -790,7 +790,7 @@ test_deactivate_posts_a_bare_verb() {
 
 test_deactivate_is_the_last_root_row() {
   local out; out=$(run_driver "$CAPTURE_IDLE" "root-report")
-  assert_eq '["Theme","Font","Background","Applications","Capture","Deactivate"]' \
+  assert_eq '["Theme","Font","Background","Applications","Capture","Targets","Deactivate"]' \
     "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
     "Deactivate comes last — it is the only root row that is not a way in"
 }
@@ -800,6 +800,52 @@ test_deactivate_carries_the_power_glyph() {
   assert_eq '"\uf011"' \
     "$(printf '%s' "$out" | jq -a -c '[.list[] | select(.name == "Deactivate") | .icon] | .[0]')" \
     "U+F011, fa-power-off"
+}
+
+# ------------------------------------------------------------------ targets --
+
+TARGETS_ALL_ON='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"capture":{"recording":false},"targets":[{"name":"ghostty","label":"Ghostty","on":true},{"name":"nvim","label":"Neovim","on":true},{"name":"aerospace","label":"AeroSpace","on":true}],"colors":{}}'
+TARGETS_AERO_OFF='{"theme":{"current":"","options":[]},"font":{"current":"","options":[]},"bg":{"current":"","options":[]},"capture":{"recording":false},"targets":[{"name":"ghostty","label":"Ghostty","on":true},{"name":"nvim","label":"Neovim","on":false},{"name":"aerospace","label":"AeroSpace","on":false}],"colors":{}}'
+
+test_targets_lists_every_target_by_label() {
+  local out; out=$(run_driver "$TARGETS_ALL_ON" "targets-report")
+  assert_eq '["Ghostty","Neovim","AeroSpace"]' "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+    "the rows are the target labels, in the order the CLI gives them"
+}
+
+# Every row is independently on or off, so the row's own glyph carries the
+# state. A tick would mean "this is the current one", which is the wrong idea
+# in a list of switches.
+test_each_target_shows_its_own_switch_state() {
+  local out; out=$(run_driver "$TARGETS_AERO_OFF" "targets-report")
+  assert_eq '["\uf205","\uf0ae","\uf0ae"]' "$(printf '%s' "$out" | jq -a -c '[.list[] | .icon]')" \
+    "on is toggle-on, off is toggle-off"
+}
+
+# The label is for people; the CLI takes the name. "macOS appearance" must never
+# be sent as a target.
+test_toggling_sends_the_name_not_the_label() {
+  local out; out=$(run_driver "$TARGETS_ALL_ON" "targets-toggle")
+  assert_eq '{"action":"apply","cmd":"targets","args":["--toggle","nvim"]}' \
+    "$(printf '%s' "$out" | jq -c '.[-1]')" "the Neovim row must toggle the nvim target"
+}
+
+# AeroSpace's Gaps and Workspaces write to a config omamac has been told to
+# leave alone, so offering them would be offering a no-op.
+test_aerospace_disappears_from_applications_when_switched_off() {
+  assert_eq '["AeroSpace","Ghostty","Slack"]' \
+    "$(run_driver "$TARGETS_ALL_ON" "apps-report" | jq -c '[.list[] | .name]')" \
+    "it is there while switched on"
+  assert_eq '["Ghostty","Slack"]' \
+    "$(run_driver "$TARGETS_AERO_OFF" "apps-report" | jq -c '[.list[] | .name]')" \
+    "and gone once switched off"
+}
+
+test_targets_is_the_sixth_root_row() {
+  local out; out=$(run_driver "$TARGETS_ALL_ON" "root-report")
+  assert_eq '["Theme","Font","Background","Applications","Capture","Targets","Deactivate"]' \
+    "$(printf '%s' "$out" | jq -c '[.list[] | .name]')" \
+    "Targets sits before Deactivate"
 }
 
 run_tests

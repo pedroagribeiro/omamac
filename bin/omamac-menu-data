@@ -27,6 +27,12 @@ bg_cur=$("${OMAMAC_DIR}/bin/omamac-bg" --current)
 # Upstream hides its stop row behind `"when": "pgrep -f gpu-screen-recorder"`.
 # The menu has no shell to run a `when` in, so the answer is carried in the
 # data instead. --status exits non-zero when nothing is recording.
+# name<TAB>label<TAB>on|off -> [{name, label, on}], so the menu can show the
+# label, tick the enabled ones, and send the name back.
+targets_json=$("${OMAMAC_DIR}/bin/omamac-targets" --list \
+  | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t")
+                 | {name: .[0], label: .[1], on: (.[2] == "on")})')
+
 if "${OMAMAC_DIR}/bin/omamac-capture" --status >/dev/null 2>&1; then
   recording=true
 else
@@ -60,6 +66,7 @@ jq -n -c \
   --arg blc "$blur_cur"   --argjson blo "$("${OMAMAC_DIR}/bin/omamac-blur"    --list | arr)" \
   --arg bc "$bg_cur"    --argjson bo "$("${OMAMAC_DIR}/bin/omamac-bg"    --list | arr)" \
   --argjson rec "$recording" \
+  --argjson tg "$targets_json" \
   --arg bgc "$bg_color" --arg fgc "$fg_color" --arg ac "$accent_color" --arg selc "$sel_color" \
   '{theme:{current:$tc,options:$to},font:{current:$fc,options:$fo},
     fontSize:{current:$sc,options:$so},opacity:{current:$oc,options:$oo},
@@ -67,4 +74,5 @@ jq -n -c \
     padding:{current:$pc,options:$po},blur:{current:$blc,options:$blo},
     bg:{current:$bc,options:$bo},
     capture:{recording:$rec},
+    targets:$tg,
     colors:{background:$bgc,foreground:$fgc,accent:$ac,selection_background:$selc}}'

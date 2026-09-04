@@ -324,9 +324,21 @@ switch (scenario) {
     break;
   // Root: Theme, Font, Background, Applications, Capture, Deactivate — the
   // last row, five downs away.
+  // Root: Theme, Font, Background, Applications, Capture, Targets, Deactivate
+  case 'targets-report':
+    for (let i = 0; i < 5; i++) fireKey('ArrowDown');
+    fireKey('Enter');
+    break;
+  case 'targets-toggle':
+    for (let i = 0; i < 5; i++) fireKey('ArrowDown');
+    fireKey('Enter');                            // Targets
+    fireKey('ArrowDown');                        // Ghostty -> Neovim
+    fireKey('Enter');
+    break;
+  // Deactivate is the LAST root row, now six below Theme.
   case 'deactivate':
-    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
-    fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('Enter');
+    for (let i = 0; i < 6; i++) fireKey('ArrowDown');
+    fireKey('Enter');
     break;
   case 'capture-color':
     fireKey('ArrowDown'); fireKey('ArrowDown'); fireKey('ArrowDown');
@@ -382,7 +394,7 @@ if (['font-open-and-report', 'root-report', 'size-open-and-report',
      'apps-report', 'apps-then-escape', 'workspaces-report',
      'wsmonitor-report', 'wsmonitor-escape',
      'capture-report', 'record-then-escape',
-     'capture-record-report'].includes(scenario)) {
+     'capture-record-report', 'targets-report', 'apps-report'].includes(scenario)) {
   process.stdout.write(JSON.stringify({
     messages,
     list: listReport(),
