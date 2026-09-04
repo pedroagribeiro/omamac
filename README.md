@@ -10,7 +10,7 @@ appearance and wallpaper together — from a single theme definition.
 [![platform](https://img.shields.io/badge/platform-macOS-111111?style=flat-square&logo=apple&logoColor=white)](#requirements)
 [![themes](https://img.shields.io/badge/themes-22-1f6f5c?style=flat-square)](#the-themes)
 [![ported from](https://img.shields.io/badge/ported%20from-Omarchy%20v4.0.2-1f6f5c?style=flat-square)](#credits)
-[![tests](https://img.shields.io/badge/tests-338-1f6f5c?style=flat-square)](#development)
+[![tests](https://img.shields.io/badge/tests-371-1f6f5c?style=flat-square)](#development)
 [![license](https://img.shields.io/badge/license-MIT-1f6f5c?style=flat-square)](LICENSE)
 
 <img src="docs/images/menu-theme.jpg" alt="The theme picker: a coverflow of theme previews, centred on Osaka Jade" width="100%">
@@ -36,11 +36,11 @@ are all lifted from the upstream QML and shell sources at a pinned release tag.
 
 ## The menu
 
-Five things at the root. Type to filter, arrows to move, <kbd>Enter</kbd> to
+Six things at the root. Type to filter, arrows to move, <kbd>Enter</kbd> to
 apply, <kbd>Esc</kbd> to go back one level and then close.
 
 <div align="center">
-<img src="docs/images/menu-root.jpg" alt="The root menu: Theme, Font, Background, Applications, Capture" width="620">
+<img src="docs/images/menu-root.jpg" alt="The root menu: Theme, Font, Background, Applications, Capture, Deactivate" width="620">
 </div>
 
 ### Theme and Background
@@ -221,6 +221,42 @@ and colour-correct, but an image element scaled to a whole screen renders empty
 inside a full-screen canvas.
 
 </details>
+
+### Deactivate
+
+The last row at the root, and the only one that is not a way in to something.
+
+omamac does exactly two things unprompted: it holds
+<kbd>⌘</kbd><kbd>⌥</kbd><kbd>O</kbd> and
+<kbd>⌘</kbd><kbd>⌃</kbd><kbd>Space</kbd>, and it re-asserts the wallpaper when
+the display configuration changes. **Deactivate** releases both. That is the
+whole of "off" — everything else omamac does happens because you asked for it.
+
+```
+omamac paused — resume with: omamac resume
+```
+
+It changes nothing any tool reads, so your colours stay exactly as they are.
+That is deliberate rather than lazy: the pointers that make a theme take effect
+— Zed's `"theme": "omamac"`, Claude Code's `custom:omamac`, the Ghostty
+`config-file` include, the bat alias, the AeroSpace template — are lines in
+*your* config files. omamac does not own them and will not edit them, so
+removing the generated themes would leave those aimed at files that no longer
+exist.
+
+Since the row releases the hotkey, it also makes this menu unreachable — which
+is why the confirmation names the way back, and why `omamac doctor` reports a
+paused omamac rather than staying silent about it:
+
+```
+  skip  omamac   PAUSED since 2026-09-04T10:23:12 — hotkeys released,
+                 wallpaper watcher stopped. Resume with: omamac resume
+```
+
+The state is a marker file, not something held in Hammerspoon, so a paused
+omamac comes back paused after a reload — and so `omamac resume`, typed in a
+terminal, can reach a process it has no other way to talk to (the host watches
+the state directory).
 
 ## What it themes
 
@@ -472,6 +508,8 @@ omamac padding    [points|--list|--current]
 omamac blur       [radius|--list|--current]
 omamac bg         [name|--next|--reapply|--list|--current]
 omamac aerospace  [gaps|--workspace <n>=<monitor>|--workspaces|--monitors|--render|--list|--current]
+omamac pause      [--status|--since]
+omamac resume
 omamac capture    --screenshot|--record [--region "X,Y WxH"] [--audio]
                   --color "#rrggbb" | --stop | --status
 omamac slack      [--copy]
@@ -609,7 +647,7 @@ or `runs` (a single action), and a glyph in `APP_ICONS` — all in
 ./tests/run
 ```
 
-338 tests, plain bash — no framework — needing `node`, a Lua front-end, `jq` and
+371 tests, plain bash — no framework — needing `node`, a Lua front-end, `jq` and
 macOS's `plutil`. There's deliberately no flake `checks` output: none of those
 exist in a Nix sandbox, and a check that can never pass is worse than none.
 
